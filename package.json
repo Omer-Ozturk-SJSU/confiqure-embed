@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc && node build.mjs",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "tsc"
   },
   "license": "Apache-2.0",
   "publishConfig": {
