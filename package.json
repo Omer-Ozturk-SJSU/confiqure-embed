@@ -1,0 +1,26 @@
+{
+  "name": "@confiqure/embed",
+  "version": "0.1.0",
+  "description": "confiqure.ai embed SDK — drop-in chat widget for your app",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist/", "README.md"],
+  "scripts": {
+    "build": "tsc && node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Omer-Ozturk-SJSU/confiqure-embed"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "esbuild": "^0.25.0"
+  }
+}
