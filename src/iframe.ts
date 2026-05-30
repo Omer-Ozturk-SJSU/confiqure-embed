@@ -11,7 +11,7 @@ export function createIframe(container: HTMLElement, opts: IframeOptions): HTMLI
   const slug = opts.configEnd.replace(/\//g, '-').replace(/^-/, '')
   const params = new URLSearchParams({ t: opts.token })
   if (opts.theme !== 'auto') params.set('theme', opts.theme)
-  const src = `${opts.baseUrl}/${opts.workspaceKey}/chat-${slug}?${params}`
+  const src = `${opts.baseUrl}/${opts.workspaceKey}/${slug}?${params}`
 
   const iframe = document.createElement('iframe')
   iframe.src = src

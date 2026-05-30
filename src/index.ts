@@ -65,7 +65,7 @@ async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
   // Best-effort: warn at init about declared frontend tools with no registered handler,
   // so the gap is visible the moment the page loads rather than mid-chat.
   const slug = claims.configEnd.replace(/\//g, '-').replace(/^-/, '')
-  void validateToolHandlers(baseUrl, claims.workspaceKey, `chat-${slug}`, token, Object.keys(tools))
+  void validateToolHandlers(baseUrl, claims.workspaceKey, slug, token, Object.keys(tools))
 
   const chat: ConfiqureChat = {
     on(event: string, handler: (data?: any) => void) {
