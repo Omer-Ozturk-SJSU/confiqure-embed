@@ -11,7 +11,10 @@ export function createIframe(container: HTMLElement, opts: IframeOptions): HTMLI
   const slug = opts.configEnd.replace(/\//g, '-').replace(/^-/, '')
   const params = new URLSearchParams({ t: opts.token })
   if (opts.theme !== 'auto') params.set('theme', opts.theme)
-  const src = `${opts.baseUrl}/${opts.workspaceKey}/${slug}?${params}`
+  // The default endpoint (configEnd "/") has an empty slug → it is reached at the workspace
+  // root /{workspaceKey} with NO segment; named endpoints append their slug.
+  const path = slug ? `${opts.workspaceKey}/${slug}` : opts.workspaceKey
+  const src = `${opts.baseUrl}/${path}?${params}`
 
   const iframe = document.createElement('iframe')
   iframe.src = src

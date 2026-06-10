@@ -94,7 +94,12 @@ async function validateToolHandlers(
   registered: string[]
 ): Promise<void> {
   try {
-    const url = `${baseUrl}/api/${workspaceKey}/chat/${configName}/frontend-tools?t=${encodeURIComponent(token)}`
+    // The default endpoint (empty slug) is reached at /api/{ws}/chat/... with NO segment;
+    // named endpoints keep their slug. Matches the backend route (configName optional).
+    const chatBase = configName
+      ? `${baseUrl}/api/${workspaceKey}/chat/${configName}`
+      : `${baseUrl}/api/${workspaceKey}/chat`
+    const url = `${chatBase}/frontend-tools?t=${encodeURIComponent(token)}`
     const res = await fetch(url)
     if (!res.ok) return
     const declared = (await res.json()) as string[]
