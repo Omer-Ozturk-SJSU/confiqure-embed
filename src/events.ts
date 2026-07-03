@@ -47,7 +47,10 @@ export class EventBus {
           this.emit('ready')
           break
         case 'complete':
-          this.emit('complete', { values: msg.values ?? {} })
+          // The iframe posts the finalized instance keys; the host pulls values via
+          // GET /objects/{key}. (The old `values` payload was never populated — the
+          // iframe has sent confiqureKeys since the per-turn-save migration.)
+          this.emit('complete', { confiqureKeys: msg.confiqureKeys ?? [] })
           break
         case 'error':
           this.emit('error', { code: msg.code ?? 'UNKNOWN', message: msg.message ?? '' })

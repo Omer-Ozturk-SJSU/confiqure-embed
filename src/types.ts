@@ -41,7 +41,7 @@ export interface ConfiqureInitOptions {
 
 export interface ConfiqureChat {
   on(event: 'ready', handler: () => void): ConfiqureChat
-  on(event: 'complete', handler: (data: { values: Record<string, unknown> }) => void): ConfiqureChat
+  on(event: 'complete', handler: (data: { confiqureKeys: string[] }) => void): ConfiqureChat
   on(event: 'error', handler: (err: { code: string; message: string }) => void): ConfiqureChat
   on(event: 'closed', handler: (data: { reason: string }) => void): ConfiqureChat
   destroy(): void
@@ -49,7 +49,8 @@ export interface ConfiqureChat {
 
 export interface ConfiqureMessage {
   type: string
-  values?: Record<string, unknown>
+  /** Finalized instance keys carried by confiqure:complete — pull values via GET /objects/{key}. */
+  confiqureKeys?: string[]
   code?: string
   message?: string
   reason?: string
