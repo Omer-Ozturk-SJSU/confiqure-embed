@@ -4,9 +4,28 @@ import { EventBus } from './events.js'
 import { createIframe, destroyIframe } from './iframe.js'
 
 const DEFAULT_BASE_URL = 'https://confiqure.ai'
+const DEFAULT_API_BASE_URL = 'https://api.confiqure.ai'
 
 async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
   const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
+  const apiBaseUrl = (options.apiBaseUrl ?? DEFAULT_API_BASE_URL).replace(/\/+$/, '')
+
+  // Init guard (#154): baseUrl is the PAGE origin that frames the chat, never the API origin.
+  // The API origin sends X-Frame-Options and can't be framed, so catch the mix-up loudly here.
+  let baseHostname: string
+  try {
+    baseHostname = new URL(baseUrl).hostname
+  } catch {
+    throw new Error(`confiqure: baseUrl is not a valid URL: "${baseUrl}"`)
+  }
+  if (baseHostname.startsWith('api.') || baseUrl === apiBaseUrl) {
+    throw new Error(
+      `confiqure: baseUrl must be the confiqure page origin that serves the chat iframe ` +
+      `(default 'https://confiqure.ai'), not the API origin — got '${baseUrl}'. ` +
+      `Pass the API origin via the apiBaseUrl option instead. See https://confiqure.ai/docs/guides/embed`
+    )
+  }
+
   const theme = options.theme ?? 'auto'
   const autoResize = options.autoResize ?? false
 
@@ -37,6 +56,15 @@ async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
   const bus = new EventBus(baseUrl)
   bus.startListening()
 
+  // Ready watchdog (#154): if the iframe never posts `ready`, the embed is almost always
+  // misconfigured (wrong origin or blocked framing). Surface it instead of failing silently.
+  let readyTimer: ReturnType<typeof setTimeout> | undefined
+  let readyFired = false
+  bus.on('ready', () => {
+    readyFired = true
+    clearTimeout(readyTimer)
+  })
+
   const iframe = createIframe(container, {
     baseUrl,
     token,
@@ -45,6 +73,17 @@ async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
     theme,
     autoResize
   })
+
+  readyTimer = setTimeout(() => {
+    if (readyFired) return
+    console.error(
+      'confiqure: chat iframe did not become ready within 8s. Likely causes: ' +
+      '(1) wrong baseUrl — it must be the confiqure page origin that serves the chat (default https://confiqure.ai), not the API origin; ' +
+      '(2) framing blocked by X-Frame-Options / CSP frame-ancestors on the chat page. ' +
+      'Note: an intentionally offscreen or loading="lazy" iframe that has not scrolled into view can also trip this.'
+    )
+    bus.emitError('EMBED_NOT_READY', 'chat iframe did not become ready within 8s')
+  }, 8000)
 
   if (autoResize) {
     bus.on('resize', (data) => {
@@ -65,7 +104,7 @@ async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
   // Best-effort: warn at init about declared frontend tools with no registered handler,
   // so the gap is visible the moment the page loads rather than mid-chat.
   const slug = claims.configEnd.replace(/\//g, '-').replace(/^-/, '')
-  void validateToolHandlers(baseUrl, claims.workspaceKey, slug, token, Object.keys(tools))
+  void validateToolHandlers(apiBaseUrl, claims.workspaceKey, slug, token, Object.keys(tools))
 
   const chat: ConfiqureChat = {
     on(event: string, handler: (data?: any) => void) {
@@ -73,6 +112,7 @@ async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
       return chat
     },
     destroy() {
+      clearTimeout(readyTimer)
       bus.stopListening()
       destroyIframe(iframe)
     }
@@ -87,7 +127,7 @@ async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
  * is swallowed — this is a dev convenience, never a hard dependency.
  */
 async function validateToolHandlers(
-  baseUrl: string,
+  apiBaseUrl: string,
   workspaceKey: string,
   configName: string,
   token: string,
@@ -97,11 +137,14 @@ async function validateToolHandlers(
     // The default endpoint (empty slug) is reached at /api/{ws}/chat/... with NO segment;
     // named endpoints keep their slug. Matches the backend route (configName optional).
     const chatBase = configName
-      ? `${baseUrl}/api/${workspaceKey}/chat/${configName}`
-      : `${baseUrl}/api/${workspaceKey}/chat`
+      ? `${apiBaseUrl}/api/${workspaceKey}/chat/${configName}`
+      : `${apiBaseUrl}/api/${workspaceKey}/chat`
     const url = `${chatBase}/frontend-tools?t=${encodeURIComponent(token)}`
     const res = await fetch(url)
-    if (!res.ok) return
+    if (!res.ok) {
+      console.warn('[confiqure] frontend-tools discovery failed: ' + res.status + ' ' + url)
+      return
+    }
     const declared = (await res.json()) as string[]
     if (!Array.isArray(declared)) return
     const have = new Set(registered)

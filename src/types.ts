@@ -27,7 +27,16 @@ export interface ConfiqureInitOptions {
   configEnd?: string
   theme?: 'light' | 'dark' | 'auto'
   autoResize?: boolean
+  /**
+   * The confiqure PAGE origin that serves the chat iframe; default `https://confiqure.ai`.
+   * NOT the API origin — passing the API origin here throws at init.
+   */
   baseUrl?: string
+  /**
+   * The confiqure API origin used for host-page API calls (currently the frontend-tools
+   * discovery fetch); default `https://api.confiqure.ai`.
+   */
+  apiBaseUrl?: string
   /**
    * Handlers for frontend tools (declared `serverSide=false` in the host's
    * `@Confiqure.Tool` methods). Keyed by tool name. The SDK runs the matching

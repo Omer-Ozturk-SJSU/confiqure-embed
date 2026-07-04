@@ -1,6 +1,6 @@
 {
   "name": "@confiqure/embed",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "confiqure.ai embed SDK — drop-in chat widget for your app",
   "type": "module",
   "main": "./dist/index.js",

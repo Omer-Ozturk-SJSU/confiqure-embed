@@ -85,7 +85,8 @@ chat.on('closed', (data) => { /* data.reason */ })
 | `configEnd` | `string` | - | Endpoint slug (with tokenUrl) |
 | `theme` | `'light' \| 'dark' \| 'auto'` | `'auto'` | Color mode |
 | `autoResize` | `boolean` | `false` | Auto-adjust height |
-| `baseUrl` | `string` | `'https://confiqure.ai'` | API base |
+| `baseUrl` | `string` | `'https://confiqure.ai'` | Page origin serving the chat iframe |
+| `apiBaseUrl` | `string` | `'https://api.confiqure.ai'` | API origin for host-page calls (frontend-tools discovery) |
 
 ## Cleanup
 

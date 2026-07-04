@@ -27,6 +27,11 @@ export class EventBus {
     this.handlers.get(event)!.add(handler)
   }
 
+  /** Emit a locally-generated (host-side) error to 'error' subscribers — used by the ready watchdog. */
+  emitError(code: string, message: string): void {
+    this.emit('error', { code, message })
+  }
+
   private emit(event: string, data?: unknown): void {
     const set = this.handlers.get(event)
     if (!set) return
