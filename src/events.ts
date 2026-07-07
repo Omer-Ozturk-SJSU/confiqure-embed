@@ -10,6 +10,15 @@ export class EventBus {
   private postToIframe: ((msg: object) => void) | null = null
   private toolTimeoutMs = 120_000
   private aborters = new Set<AbortController>()
+  /**
+   * #160 — sessionIds whose handler is currently running. The backend re-emits a
+   * `frontend_tool_call` with the SAME sessionId on every stream reconnect (so a call dispatched
+   * while a mobile browser had the stream suspended is not lost). While a session's handler is
+   * still in flight (its popup open) we ignore the duplicate instead of rendering it twice. The
+   * id is cleared when the handler settles — so a genuine re-dispatch after the page reloaded
+   * finds an empty set and renders again (by then the old DOM state is gone anyway).
+   */
+  private inFlightTools = new Set<number>()
 
   constructor(private allowedOrigin: string) {}
 
@@ -84,15 +93,23 @@ export class EventBus {
 
     const handler = this.tools[toolName]
     if (!handler) {
+      // #160: NACK immediately instead of leaving the session to hang for 5 minutes. A lost NACK is
+      // harmless — the backend replays the call on reconnect and we NACK again (acceptReply is
+      // idempotent), so this is deliberately NOT deduped below.
       console.warn(`confiqure: no handler registered for frontend tool "${toolName}"`)
-      reply({ error: `No handler registered for tool "${toolName}"` })
+      reply({ error: `No handler registered for tool "${toolName}" on this page` })
       return
     }
+
+    // #160 dedupe: a reconnect replays the same frontend_tool_call. If this session's handler is
+    // still running (its popup is open) ignore the duplicate — do NOT re-run the handler.
+    if (this.inFlightTools.has(sessionId)) return
+    this.inFlightTools.add(sessionId)
 
     const aborter = new AbortController()
     this.aborters.add(aborter)
     const timer = setTimeout(() => aborter.abort(new Error('tool handler timed out')), this.toolTimeoutMs)
-    const cleanup = () => { clearTimeout(timer); this.aborters.delete(aborter) }
+    const cleanup = () => { clearTimeout(timer); this.aborters.delete(aborter); this.inFlightTools.delete(sessionId) }
 
     const ctx: ToolContext = {
       input: msg.input,
@@ -125,6 +142,7 @@ export class EventBus {
       try { a.abort(new Error('confiqure widget destroyed')) } catch { /* best effort */ }
     }
     this.aborters.clear()
+    this.inFlightTools.clear()
     this.handlers.clear()
   }
 }

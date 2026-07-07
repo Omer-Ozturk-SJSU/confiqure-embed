@@ -9,6 +9,8 @@
   "scripts": {
     "build": "tsc && node build.mjs",
     "typecheck": "tsc --noEmit",
+    "pretest": "tsc",
+    "test": "node --test",
     "prepublishOnly": "tsc"
   },
   "license": "Apache-2.0",
