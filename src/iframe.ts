@@ -26,7 +26,10 @@ export function createIframe(container: HTMLElement, opts: IframeOptions): HTMLI
   iframe.src = src
   iframe.style.border = 'none'
   iframe.style.width = '100%'
-  iframe.setAttribute('allow', 'clipboard-write')
+  // #201: delegate camera via permissions-policy so a token minted with camera:true can drive
+  // getUserMedia take-photo inside the embedded chat. The embedding page still gates it — the
+  // allow attribute only lets the browser prompt; the user grants. (mic stays out until needed.)
+  iframe.setAttribute('allow', 'clipboard-write; camera')
   iframe.setAttribute('loading', 'lazy')
 
   if (opts.autoResize) {
