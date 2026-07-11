@@ -2,6 +2,8 @@
 
 Drop-in JavaScript SDK for embedding [confiqure.ai](https://confiqure.ai) chat in your app.
 
+> 📖 **Full integration reference:** [confiqure.ai/docs/embed](https://confiqure.ai/docs/embed) — the canonical, always-current spec for every token claim, SDK init option, and lifecycle event payload. This README is a quickstart; the reference is normative.
+
 ## Install
 
 ```bash

@@ -6,6 +6,45 @@ import { createIframe, destroyIframe } from './iframe.js'
 const DEFAULT_BASE_URL = 'https://confiqure.ai'
 const DEFAULT_API_BASE_URL = 'https://api.confiqure.ai'
 
+// #190 per-tab conversation spaces: the tab id is minted HERE, in the host page's first-party
+// top context, not inside the chat iframe. A third-party iframe's sessionStorage is
+// storage-partitioned and, in privacy-hardened browsers, not reliably durable across re-mounts —
+// so an iframe-side id would risk losing the conversation on a host re-mount / reload. First-party
+// sessionStorage survives page reloads and every iframe re-mount within the tab, and is fresh in a
+// new tab — exactly the per-tab lifetime we want.
+const TAB_ID_KEY = 'confiqure.tabId'
+
+function newTabId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID()
+    }
+  } catch { /* fall through to the non-crypto id */ }
+  return 't-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
+}
+
+/**
+ * Resolve this tab's stable per-tab id from first-party sessionStorage, minting one on first use.
+ * Returns undefined when sessionStorage is unavailable or silently non-persistent (private modes,
+ * blocked storage): we then send NO tab id, and the backend falls back to its pre-#190
+ * tab-agnostic resume — strictly better than an ephemeral id that would fork the conversation on
+ * every re-mount.
+ */
+function resolveTabId(): string | undefined {
+  try {
+    const store = window.sessionStorage
+    const existing = store.getItem(TAB_ID_KEY)
+    if (existing) return existing
+    const id = newTabId()
+    store.setItem(TAB_ID_KEY, id)
+    // Read-back guard: some browsers expose a sessionStorage object that no-ops writes. If it
+    // didn't persist we can't rely on it surviving a re-mount, so omit the id (legacy behavior).
+    return store.getItem(TAB_ID_KEY) === id ? id : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
   const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
   const apiBaseUrl = (options.apiBaseUrl ?? DEFAULT_API_BASE_URL).replace(/\/+$/, '')
@@ -71,7 +110,8 @@ async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
     workspaceKey: claims.workspaceKey,
     configEnd: claims.configEnd,
     theme,
-    autoResize
+    autoResize,
+    tabId: resolveTabId()
   })
 
   readyTimer = setTimeout(() => {

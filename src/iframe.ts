@@ -5,12 +5,18 @@ export interface IframeOptions {
   configEnd: string
   theme: string
   autoResize: boolean
+  /** #190: per-tab conversation id, forwarded to the chat so it scopes resume to this tab. */
+  tabId?: string
 }
 
 export function createIframe(container: HTMLElement, opts: IframeOptions): HTMLIFrameElement {
   const slug = opts.configEnd.replace(/\//g, '-').replace(/^-/, '')
   const params = new URLSearchParams({ t: opts.token })
   if (opts.theme !== 'auto') params.set('theme', opts.theme)
+  // #190: hand the per-tab id to the chat iframe. The chat forwards it on POST /session so the
+  // backend keeps each browser tab in its own conversation space. Re-passed on every (re)mount, so
+  // an iframe the host tears down and re-adds lands back on the same conversation.
+  if (opts.tabId) params.set('tab', opts.tabId)
   // The default endpoint (configEnd "/") has an empty slug → it is reached at the workspace
   // root /{workspaceKey} with NO segment; named endpoints append their slug.
   const path = slug ? `${opts.workspaceKey}/${slug}` : opts.workspaceKey
