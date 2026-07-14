@@ -1,4 +1,4 @@
-import type { ConfiqureInitOptions, ConfiqureChat } from './types.js'
+import type { ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, SubmitResult } from './types.js'
 import { fetchToken, decodeTokenClaims } from './token.js'
 import { EventBus } from './events.js'
 import { createIframe, destroyIframe } from './iframe.js'
@@ -45,7 +45,47 @@ function resolveTabId(): string | undefined {
   }
 }
 
+/** #238 — the open() hand-off: everything contextual the host passes, delivered post-open. */
+interface SubmitHandoff {
+  intent?: string
+  referentKeys?: string[]
+  data?: Record<string, unknown>
+}
+
+function extractHandoff(options: ConfiqureOpenOptions): SubmitHandoff | null {
+  const hasIntent = typeof options.intent === 'string' && options.intent.trim().length > 0
+  const hasRefs = Array.isArray(options.referentKeys) && options.referentKeys.length > 0
+  const hasData = options.data != null && typeof options.data === 'object'
+    && !Array.isArray(options.data) && Object.keys(options.data).length > 0
+  if (!hasIntent && !hasRefs && !hasData) return null
+  return {
+    intent: hasIntent ? options.intent : undefined,
+    referentKeys: hasRefs ? options.referentKeys : undefined,
+    data: hasData ? options.data : undefined
+  }
+}
+
 async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
+  return mount(options, null)
+}
+
+/**
+ * #238 — the ONE surface for opening a chat with context: `confiqure.open({ token, intent,
+ * referentKeys, data })`. The session opens instantly (token-only — the chat paints
+ * immediately); the context is then auto-submitted through the submit channel: `data` moves
+ * as a single visible transfer (live progress block in the chat), is validated by the
+ * endpoint's save gates server-side, and lands in the configuration draft. The chat model
+ * receives a count-reference only — never the payload — so bulk hand-offs no longer ride
+ * (or stall) the conversation. The outcome surfaces on the returned chat's `submission`
+ * promise: a wrong shape or oversize payload rejects there, in your console, deterministically.
+ *
+ * `open()` without intent/referentKeys/data behaves exactly like `init()`.
+ */
+async function open(options: ConfiqureOpenOptions): Promise<ConfiqureChat> {
+  return mount(options, extractHandoff(options))
+}
+
+async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | null): Promise<ConfiqureChat> {
   const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
   const apiBaseUrl = (options.apiBaseUrl ?? DEFAULT_API_BASE_URL).replace(/\/+$/, '')
 
@@ -111,7 +151,10 @@ async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
     configEnd: claims.configEnd,
     theme,
     autoResize,
-    tabId: resolveTabId()
+    tabId: resolveTabId(),
+    // #238: only the FLAG rides the URL — the hand-off content itself crosses via
+    // postMessage after the widget signals `submit-ready` (nothing contextual in URLs).
+    pendingSubmit: handoff != null
   })
 
   readyTimer = setTimeout(() => {
@@ -146,11 +189,46 @@ async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
   const slug = claims.configEnd.replace(/\//g, '-').replace(/^-/, '')
   void validateToolHandlers(apiBaseUrl, claims.workspaceKey, slug, token, Object.keys(tools))
 
+  // #238: deliver the open() hand-off once the widget says it can receive it (session open +
+  // bridge listener up — postMessage doesn't buffer), and surface the settled outcome as the
+  // chat's `submission` promise. A refused submit (wrong shape, oversize, gate reject) REJECTS
+  // — a loud, developer-facing failure in the host's console, not a model mistake mid-chat.
+  let submission: Promise<SubmitResult> | null = null
+  if (handoff) {
+    let resolveSubmission!: (r: SubmitResult) => void
+    let rejectSubmission!: (e: Error) => void
+    submission = new Promise<SubmitResult>((resolve, reject) => {
+      resolveSubmission = resolve
+      rejectSubmission = reject
+    })
+    let handedOff = false
+    bus.on('submit-ready', () => {
+      // Once per mount: an iframe-internal reload re-signals readiness, but the hand-off is
+      // spent — the data either landed already or failed visibly; never silently re-submit.
+      if (handedOff) return
+      handedOff = true
+      iframe.contentWindow?.postMessage({ type: 'confiqure:submit', ...handoff }, baseUrl)
+    })
+    bus.on('submit_result', (data) => {
+      const r = data as SubmitResult
+      if (r.ok) {
+        resolveSubmission(r)
+      } else {
+        const err = new Error('confiqure: submit rejected — '
+          + (r.error ?? r.rejections?.map(x => `${x.fieldId ?? ''}: ${x.reason ?? ''}`).join('; ') ?? 'unknown')
+        ) as Error & { result?: SubmitResult }
+        err.result = r
+        rejectSubmission(err)
+      }
+    })
+  }
+
   const chat: ConfiqureChat = {
     on(event: string, handler: (data?: any) => void) {
       bus.on(event, handler)
       return chat
     },
+    submission,
     destroy() {
       clearTimeout(readyTimer)
       bus.stopListening()
@@ -200,5 +278,8 @@ async function validateToolHandlers(
   }
 }
 
-export { init }
-export type { ConfiqureInitOptions, ConfiqureChat, ToolHandler, ToolContext } from './types.js'
+export { init, open }
+export type {
+  ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, SubmitResult,
+  ToolHandler, ToolContext
+} from './types.js'

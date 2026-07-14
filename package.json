@@ -1,11 +1,14 @@
 {
   "name": "@confiqure/embed",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "confiqure.ai embed SDK — drop-in chat widget for your app",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist/", "README.md"],
+  "files": [
+    "dist/",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc && node build.mjs",
     "typecheck": "tsc --noEmit",

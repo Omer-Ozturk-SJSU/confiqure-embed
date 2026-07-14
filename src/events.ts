@@ -78,6 +78,22 @@ export class EventBus {
         case 'tool':
           this.handleToolCall(msg)
           break
+        // #238 submit channel: the widget signals it can receive the open() hand-off
+        // (session open + bridge listener up — postMessage doesn't buffer), and later
+        // posts the settled outcome (gates verdict / transfer failure).
+        case 'submit-ready':
+          this.emit('submit-ready', { conversationId: msg.conversationId })
+          break
+        case 'submit-result':
+          this.emit('submit_result', {
+            ok: msg.ok === true,
+            submissionId: msg.submissionId ?? null,
+            confiqureKey: msg.confiqureKey,
+            itemCount: msg.itemCount ?? null,
+            rejections: msg.rejections ?? [],
+            error: msg.error
+          })
+          break
       }
     }
     window.addEventListener('message', this.messageListener)
