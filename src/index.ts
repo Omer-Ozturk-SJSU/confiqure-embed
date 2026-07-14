@@ -52,16 +52,69 @@ interface SubmitHandoff {
   data?: Record<string, unknown>
 }
 
+function describe(v: unknown): string {
+  if (v === null) return 'null'
+  if (Array.isArray(v)) return 'an array'
+  return `a ${typeof v}`
+}
+
+/**
+ * #243 — normalize the open() `data` hand-off to a plain, structured-clone-safe object.
+ *
+ * Frameworks hand their state out as reactive **Proxies** (Vue `ref`/`reactive`, MobX, Angular
+ * signals, …). `postMessage` — the only way `data` crosses into the chat iframe — runs the
+ * structured-clone algorithm, and structuredClone CANNOT clone a Proxy: it throws
+ * `DataCloneError`. Left unchecked that throw surfaces deep inside delivery, AFTER the hand-off is
+ * marked spent, hanging `chat.submission` forever (the exact #243 failure). So we normalize here,
+ * at the call site, with a JSON round-trip — it strips the proxy wrapper AND proves the payload is
+ * JSON-serializable in one move. Anything that can't survive it — a non-object shape, an array, a
+ * circular graph, a value JSON drops — THROWS a descriptive error (the #238 "a wrong shape rejects
+ * deterministically in the dev's console" rule), never a silent drop.
+ */
+function normalizeHandoffData(raw: unknown): Record<string, unknown> {
+  // Shape gate first: JSON.stringify would happily serialize an array or a primitive, so those
+  // must be rejected before the round-trip, not after.
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error(
+      `confiqure: open({ data }) must be a plain object keyed by your endpoint's field names ` +
+      `(e.g. { restockList: [...] }) — got ${describe(raw)}. Arrays and primitives are not valid hand-off shapes.`
+    )
+  }
+  let plain: unknown
+  try {
+    // Un-proxies any reactive wrapper and validates JSON-serializability at once.
+    plain = JSON.parse(JSON.stringify(raw))
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e)
+    throw new Error(
+      `confiqure: open({ data }) is not JSON-serializable (${reason}). Pass a plain data object — ` +
+      `no circular references, BigInt, or other non-serializable values.`
+    )
+  }
+  // A value with a toJSON() (a bare Date, a boxed primitive) can collapse an object input down to a
+  // scalar or array — the delivered hand-off must still be a plain object.
+  if (plain === null || typeof plain !== 'object' || Array.isArray(plain)) {
+    throw new Error(
+      `confiqure: open({ data }) did not serialize to a plain object — got ${describe(plain)}. ` +
+      `Pass the real DTO shape keyed by your endpoint's field names.`
+    )
+  }
+  return plain as Record<string, unknown>
+}
+
 function extractHandoff(options: ConfiqureOpenOptions): SubmitHandoff | null {
   const hasIntent = typeof options.intent === 'string' && options.intent.trim().length > 0
   const hasRefs = Array.isArray(options.referentKeys) && options.referentKeys.length > 0
-  const hasData = options.data != null && typeof options.data === 'object'
-    && !Array.isArray(options.data) && Object.keys(options.data).length > 0
+  // #243: normalize the data hand-off up front. A wrong shape or a non-cloneable reactive wrapper
+  // THROWS here (rejecting the open() call in the host's console) instead of silently dropping or
+  // hanging delivery later. An absent/empty data payload is not an error — it's simply no data.
+  const data = options.data != null ? normalizeHandoffData(options.data) : undefined
+  const hasData = data != null && Object.keys(data).length > 0
   if (!hasIntent && !hasRefs && !hasData) return null
   return {
     intent: hasIntent ? options.intent : undefined,
     referentKeys: hasRefs ? options.referentKeys : undefined,
-    data: hasData ? options.data : undefined
+    data: hasData ? data : undefined
   }
 }
 
@@ -207,7 +260,15 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
       // spent — the data either landed already or failed visibly; never silently re-submit.
       if (handedOff) return
       handedOff = true
-      iframe.contentWindow?.postMessage({ type: 'confiqure:submit', ...handoff }, baseUrl)
+      // #243: the delivery postMessage can still throw — a value that slipped past extractHandoff's
+      // JSON check but isn't structured-cloneable, or a torn-down contentWindow. Catch it and
+      // REJECT the submission with the real error; never let a delivery failure hang the promise.
+      try {
+        iframe.contentWindow?.postMessage({ type: 'confiqure:submit', ...handoff }, baseUrl)
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : String(e)
+        rejectSubmission(new Error('confiqure: failed to deliver the open() hand-off to the chat — ' + reason))
+      }
     })
     bus.on('submit_result', (data) => {
       const r = data as SubmitResult
