@@ -1,6 +1,6 @@
 import type { ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, SubmitResult } from './types.js'
 import { fetchToken, decodeTokenClaims } from './token.js'
-import { EventBus } from './events.js'
+import { EventBus, FLUSH_CAP_MS } from './events.js'
 import { createIframe, destroyIframe } from './iframe.js'
 
 const DEFAULT_BASE_URL = 'https://confiqure.ai'
@@ -230,13 +230,39 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
     })
   }
 
+  /**
+   * The single way anything crosses into the chat iframe.
+   *
+   * #321 — this used to be `iframe.contentWindow?.postMessage(...)`. When the host tore the
+   * widget down between a tool handler resolving and its reply being posted, the optional chain
+   * no-oped SILENTLY: the result vanished, and the platform held the tool session for its full
+   * 5-minute window before expiring it TIMED_OUT. A post that cannot be delivered is now a loud
+   * console.error and a `false` return, so the caller knows the message is gone.
+   */
+  const postToIframe = (msg: object): boolean => {
+    const win = iframe.contentWindow
+    if (!win || iframe.isConnected === false) {
+      console.error(
+        'confiqure: could not deliver a message to the chat iframe — it is no longer on the page. ' +
+        'If this was a frontend-tool result, the chat will stall until the tool session expires. ' +
+        'Call chat.destroy() (which flushes in-flight tool replies) instead of removing the container ' +
+        'from the DOM while a tool handler is running.',
+        msg
+      )
+      return false
+    }
+    try {
+      win.postMessage(msg, baseUrl)
+      return true
+    } catch (e) {
+      console.error('confiqure: postMessage into the chat iframe failed:', e, msg)
+      return false
+    }
+  }
+
   // Frontend tools: run host handlers when the chat agent calls them, reply to the iframe.
   const tools = options.tools ?? {}
-  bus.configureTools(
-    tools,
-    (msg) => iframe.contentWindow?.postMessage(msg, baseUrl),
-    options.toolTimeoutMs
-  )
+  bus.configureTools(tools, postToIframe, options.toolTimeoutMs)
   // Best-effort: warn at init about declared frontend tools with no registered handler,
   // so the gap is visible the moment the page loads rather than mid-chat.
   const slug = claims.configEnd.replace(/\//g, '-').replace(/^-/, '')
@@ -264,7 +290,11 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
       // JSON check but isn't structured-cloneable, or a torn-down contentWindow. Catch it and
       // REJECT the submission with the real error; never let a delivery failure hang the promise.
       try {
-        iframe.contentWindow?.postMessage({ type: 'confiqure:submit', ...handoff }, baseUrl)
+        // #321: postToIframe reports an undeliverable post itself and returns false — turn that
+        // into the same rejection a throw produces, so a dead iframe can't hang the promise either.
+        if (!postToIframe({ type: 'confiqure:submit', ...handoff })) {
+          rejectSubmission(new Error('confiqure: failed to deliver the open() hand-off to the chat — the chat iframe did not accept the message (see the preceding console error)'))
+        }
       } catch (e) {
         const reason = e instanceof Error ? e.message : String(e)
         rejectSubmission(new Error('confiqure: failed to deliver the open() hand-off to the chat — ' + reason))
@@ -284,16 +314,55 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
     })
   }
 
+  let teardownStarted = false
+  const teardown = () => {
+    bus.stopListening()
+    destroyIframe(iframe)
+  }
+
   const chat: ConfiqureChat = {
     on(event: string, handler: (data?: any) => void) {
       bus.on(event, handler)
       return chat
     },
     submission,
+    /**
+     * #321 — teardown flushes in-flight tool replies first.
+     *
+     * The generic failure: a host tool whose ACTION is to unmount the chat (navigate, close the
+     * modal, lift an onboarding lockdown) races its own reply. The reply is posted after the
+     * handler resolves; if the iframe is already gone it is dropped and the platform sits on the
+     * tool session until it times out. So when a handler is still running, or a reply has been
+     * posted but not yet acked by the widget, we DEFER the actual teardown — bounded hard at
+     * FLUSH_CAP_MS — and let the reply depart.
+     *
+     * Bounded, never blocking: destroy() still returns immediately (the delay is asynchronous),
+     * and the common case (nothing in flight) tears down synchronously as it always did.
+     */
     destroy() {
+      if (teardownStarted) return
+      teardownStarted = true
       clearTimeout(readyTimer)
-      bus.stopListening()
-      destroyIframe(iframe)
+      if (!bus.hasPendingToolWork()) {
+        teardown()
+        return
+      }
+      void bus.drainToolWork(FLUSH_CAP_MS).then((outcome) => {
+        if (outcome === 'timeout') {
+          console.error(
+            `confiqure: destroy() waited ${FLUSH_CAP_MS}ms but a frontend-tool result never reached ` +
+            'confiqure — the chat will stall until that tool session expires. A tool handler that ' +
+            'unmounts the widget should return before the unmount, not after.'
+          )
+        } else if (outcome === 'unconfirmed') {
+          console.warn(
+            'confiqure: destroy() flushed the pending frontend-tool result(s) but the chat never ' +
+            'confirmed receipt, so delivery is not proven. Widget builds older than the tool-result ' +
+            'ack do not confirm — if you pin a self-hosted confiqure, update it.'
+          )
+        }
+        teardown()
+      })
     }
   }
 

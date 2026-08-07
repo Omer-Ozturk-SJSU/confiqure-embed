@@ -141,3 +141,14 @@ chat.on('closed', (data) => { /* data.reason */ })
 ```js
 chat.destroy()
 ```
+
+`destroy()` returns immediately, but the actual unmount is **deferred (hard cap 2s)** while a
+frontend-tool handler is still running or a posted tool result has not yet been confirmed by
+the chat — otherwise a tool whose *action* is to tear the widget down (navigate, close the
+modal) races and loses its own reply, and the chat stalls until that tool session expires.
+Nothing in flight ⇒ teardown is instant, exactly as before. A result that still cannot be
+delivered is reported with `console.error`, never dropped silently.
+
+If you unmount by removing the container element yourself, call `destroy()` first (or return
+from the handler before triggering the unmount) — the SDK cannot defer a DOM removal it does
+not perform.

@@ -98,6 +98,14 @@ export interface ConfiqureChat {
    * Null when open()/init() was called without intent/referentKeys/data.
    */
   submission: Promise<SubmitResult> | null
+  /**
+   * Unmount the chat and abort in-flight tool handlers.
+   *
+   * #321: returns immediately, but the actual teardown is DEFERRED (bounded, ≤2s) while a
+   * frontend-tool handler is still running or a posted tool result has not yet been confirmed
+   * by the chat — otherwise a tool whose action is to unmount the widget would race, and lose,
+   * its own reply. Nothing in flight ⇒ teardown is immediate, exactly as before.
+   */
   destroy(): void
 }
 
@@ -117,6 +125,8 @@ export interface ConfiqureMessage {
   endUserHandle?: string
   workspaceKey?: string
   // #238 confiqure:submit-result (iframe -> host) — the submit channel's settled outcome.
+  // #321 confiqure:tool-result-ack (iframe -> host) — reuses `sessionId` + `ok`: the widget
+  // confirms it forwarded that tool result to the platform (ok=false when the POST failed).
   ok?: boolean
   submissionId?: number | null
   confiqureKey?: string
