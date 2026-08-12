@@ -128,6 +128,9 @@ export interface ConfiqureMessage {
   // #321 confiqure:tool-result-ack (iframe -> host) — reuses `sessionId` + `ok`: the widget
   // confirms it forwarded that tool result to the platform (ok=false when the POST failed).
   ok?: boolean
+  // #322 confiqure:token-refresh (host -> iframe) — a freshly minted embed token, delivered
+  // either proactively (before `exp`) or in answer to the widget's `confiqure:token-expired`.
+  token?: string
   submissionId?: number | null
   confiqureKey?: string
   itemCount?: number | null

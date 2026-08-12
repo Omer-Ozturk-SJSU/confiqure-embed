@@ -126,6 +126,13 @@ export class EventBus {
         case 'tool-result-ack':
           if (msg.sessionId != null) this.settleReply(msg.sessionId, msg.ok !== false)
           break
+        // #322: the widget's POST hit a 401 TOKEN_EXPIRED and it is holding the user's message
+        // until we hand it a fresh token. The widget is where expiry is DISCOVERED (it makes the
+        // chat calls); the host page is the only place that can mint. index.ts answers with
+        // `confiqure:token-refresh` or, if the mint is impossible/failed, `token-refresh-failed`.
+        case 'token-expired':
+          this.emit('token-expired')
+          break
         // #238 submit channel: the widget signals it can receive the open() hand-off
         // (session open + bridge listener up — postMessage doesn't buffer), and later
         // posts the settled outcome (gates verdict / transfer failure).

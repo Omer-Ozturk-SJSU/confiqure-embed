@@ -14,6 +14,19 @@ const DEFAULT_API_BASE_URL = 'https://api.confiqure.ai'
 // new tab — exactly the per-tab lifetime we want.
 const TAB_ID_KEY = 'confiqure.tabId'
 
+/**
+ * #322 — how far ahead of the token's `exp` the proactive re-mint fires. Two minutes is
+ * comfortably longer than a mint round trip and short enough that a re-mint is rare.
+ */
+const REFRESH_LEAD_MS = 120_000
+
+/**
+ * #322 — floor on the proactive timer. Guards the degenerate case (a token minted with a
+ * seconds-long TTL, or a clock skew that makes `exp` look imminent) from turning the refresh
+ * into a hot loop.
+ */
+const MIN_REFRESH_DELAY_MS = 1_000
+
 function newTabId(): string {
   try {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -260,6 +273,82 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
     }
   }
 
+  /**
+   * #322 — token lifecycle.
+   *
+   * An embed token has a finite TTL (the host picks it; 60 minutes is the common choice). The SDK
+   * used to mint ONE at load and never think about it again, so any chat left open past the hour
+   * was silently dead: the next message 401'd, the raw error rendered into the transcript, and the
+   * user's text was lost. Two paths now, sharing ONE timer and ONE single-flight mint:
+   *
+   *  - **proactive** — re-mint ~2 min before `exp` and hand the widget the new token in place, so
+   *    the boundary is normally never reached at all;
+   *  - **reactive** — answer the widget's `confiqure:token-expired` (the widget makes the chat
+   *    POSTs, so it is where an expiry is actually discovered) with exactly one re-mint.
+   *
+   * Both re-use the LOAD-TIME mint path — `fetchToken` against the host's own `tokenUrl` — so
+   * there is no new confiqure API and nothing extra for the host to build. A host that passed a
+   * literal `token` instead has no mint path and therefore cannot be refreshed; that case is
+   * reported once, loudly, and answered with a refusal so the widget shows its "refresh the page"
+   * state rather than waiting on an answer that will never come.
+   */
+  const canRemint = Boolean(options.tokenUrl && options.endUserHandle && options.configEnd)
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined
+  let mintInFlight: Promise<string | null> | null = null
+
+  const scheduleProactiveRefresh = (current: string): void => {
+    clearTimeout(refreshTimer)
+    if (!canRemint) return
+    const exp = decodeTokenClaims(current)?.exp
+    if (!exp) return
+    const remainingMs = exp * 1000 - Date.now()
+    // Already past it: a timer is the wrong tool. The reactive path owns an expired token.
+    if (remainingMs <= 0) return
+    // Fire at exp-2min, but NEVER before the halfway point of what's left — a deliberately short
+    // TTL (a 60s test token) must not re-mint the instant it is issued, again and again.
+    const delay = Math.max(remainingMs - REFRESH_LEAD_MS, remainingMs / 2, MIN_REFRESH_DELAY_MS)
+    refreshTimer = setTimeout(() => { void remint() }, delay)
+  }
+
+  /** Mint a fresh token and deliver it to the widget. Single-flight: concurrent asks share one. */
+  const remint = (): Promise<string | null> => {
+    if (mintInFlight) return mintInFlight
+    if (!canRemint) {
+      console.error(
+        'confiqure: the chat session expired and cannot be renewed — this widget was mounted with a ' +
+        'literal `token`, so the SDK has no way to mint a new one. Pass `tokenUrl` (+ endUserHandle, ' +
+        'configEnd) so confiqure can refresh the session transparently, or re-mount the widget with a ' +
+        'fresh token. The user has been asked to reload the page.'
+      )
+      return Promise.resolve(null)
+    }
+    mintInFlight = fetchToken(options.tokenUrl!, options.endUserHandle!, options.configEnd!)
+      .then((fresh) => {
+        token = fresh
+        scheduleProactiveRefresh(fresh)
+        postToIframe({ type: 'confiqure:token-refresh', token: fresh })
+        return fresh
+      })
+      .catch((e) => {
+        // No retry loop, by design: the proactive timer already fires 2 min early, so a failed
+        // attempt is followed by the widget's own reactive request when the token actually dies.
+        console.error('confiqure: could not refresh the chat session token from your tokenUrl:', e)
+        return null
+      })
+      .finally(() => { mintInFlight = null })
+    return mintInFlight
+  }
+
+  // The widget is holding a user message behind an expired token. Answer once, either way —
+  // an unanswered request just becomes a hung "reconnecting…" state on the user's screen.
+  bus.on('token-expired', () => {
+    void remint().then((fresh) => {
+      if (!fresh) postToIframe({ type: 'confiqure:token-refresh-failed' })
+    })
+  })
+
+  scheduleProactiveRefresh(token)
+
   // Frontend tools: run host handlers when the chat agent calls them, reply to the iframe.
   const tools = options.tools ?? {}
   bus.configureTools(tools, postToIframe, options.toolTimeoutMs)
@@ -343,6 +432,7 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
       if (teardownStarted) return
       teardownStarted = true
       clearTimeout(readyTimer)
+      clearTimeout(refreshTimer)   // #322: a torn-down widget must not keep re-minting
       if (!bus.hasPendingToolWork()) {
         teardown()
         return
