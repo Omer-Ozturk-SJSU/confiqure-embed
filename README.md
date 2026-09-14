@@ -136,6 +136,17 @@ chat.on('closed', (data) => { /* data.reason */ })
 | `baseUrl` | `string` | `'https://confiqure.ai'` | Page origin serving the chat iframe |
 | `apiBaseUrl` | `string` | `'https://api.confiqure.ai'` | API origin for host-page calls (frontend-tools discovery) |
 
+## Following your app's theme
+
+`theme: 'auto'` follows the visitor's operating system, not your app. If your app has its own
+light/dark toggle, open the chat in your current mode and forward every flip — the chat recolours
+live, with no reload:
+
+```js
+const chat = await confiqure.init({ target, token, theme: isDark() ? 'dark' : 'light' })
+onYourThemeToggle((dark) => chat.setTheme(dark ? 'dark' : 'light'))   // 'light' | 'dark' | 'auto'
+```
+
 ## Cleanup
 
 ```js

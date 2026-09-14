@@ -172,6 +172,10 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
   }
 
   const theme = options.theme ?? 'auto'
+  // setTheme(): the mode the host wants NOW. The iframe URL carries the init value; anything the
+  // host switches to later crosses as a `confiqure:theme` message (and is re-sent at `ready`,
+  // because a message posted before the widget listens is simply lost — postMessage doesn't buffer).
+  let currentTheme = theme
   const autoResize = options.autoResize ?? false
 
   const container = typeof options.target === 'string'
@@ -403,6 +407,10 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
     })
   }
 
+  bus.on('ready', () => {
+    if (currentTheme !== theme) postToIframe({ type: 'confiqure:theme', theme: currentTheme })
+  })
+
   let teardownStarted = false
   const teardown = () => {
     bus.stopListening()
@@ -415,6 +423,14 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
       return chat
     },
     submission,
+    setTheme(next) {
+      if (next !== 'light' && next !== 'dark' && next !== 'auto') {
+        console.warn(`confiqure: setTheme() expects 'light', 'dark' or 'auto' — got ${JSON.stringify(next)}; ignored.`)
+        return
+      }
+      currentTheme = next
+      if (!teardownStarted) postToIframe({ type: 'confiqure:theme', theme: next })
+    },
     /**
      * #321 — teardown flushes in-flight tool replies first.
      *

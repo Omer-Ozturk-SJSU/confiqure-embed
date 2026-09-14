@@ -107,6 +107,13 @@ export interface ConfiqureChat {
    * its own reply. Nothing in flight ⇒ teardown is immediate, exactly as before.
    */
   destroy(): void
+  /**
+   * Switch the chat's colour mode live, with no reload. Call it from your own theme toggle so
+   * the widget follows YOUR app instead of the visitor's OS setting; `'auto'` hands the choice
+   * back to the OS. A call made before the chat is ready is applied as soon as it is.
+   * Pair it with the `theme` init option so the chat also OPENS in your current mode.
+   */
+  setTheme(theme: 'light' | 'dark' | 'auto'): void
 }
 
 export interface ConfiqureMessage {
@@ -131,6 +138,8 @@ export interface ConfiqureMessage {
   // #322 confiqure:token-refresh (host -> iframe) — a freshly minted embed token, delivered
   // either proactively (before `exp`) or in answer to the widget's `confiqure:token-expired`.
   token?: string
+  // confiqure:theme (host -> iframe) — chat.setTheme(): the colour mode the widget should show now.
+  theme?: 'light' | 'dark' | 'auto'
   submissionId?: number | null
   confiqureKey?: string
   itemCount?: number | null
