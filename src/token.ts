@@ -1,5 +1,6 @@
-export async function fetchToken(tokenUrl: string, endUserHandle: string, configEnd: string): Promise<string> {
-  const params = new URLSearchParams({ endUserHandle, configEnd })
+/** Annotation 3.0: a token names no endpoint, so the host's token endpoint gets the end user only. */
+export async function fetchToken(tokenUrl: string, endUserHandle: string): Promise<string> {
+  const params = new URLSearchParams({ endUserHandle })
   const res = await fetch(`${tokenUrl}?${params}`, { credentials: 'same-origin' })
   if (!res.ok) {
     throw new Error(`Token fetch failed: ${res.status} ${res.statusText}`)
@@ -13,7 +14,6 @@ export async function fetchToken(tokenUrl: string, endUserHandle: string, config
 
 export interface TokenClaims {
   workspaceKey: string
-  configEnd: string
   /**
    * #322 — standard JWT expiry, epoch SECONDS, or null when the token carries none.
    * Reading it host-side is not a trust decision (the server re-verifies the signed token on
@@ -29,7 +29,6 @@ export function decodeTokenClaims(token: string): TokenClaims | null {
     const payload = JSON.parse(atob(parts[1]!.replace(/-/g, '+').replace(/_/g, '/')))
     return {
       workspaceKey: payload.workspaceKey ?? '',
-      configEnd: payload.configEnd ?? '',
       exp: typeof payload.exp === 'number' ? payload.exp : null
     }
   } catch {

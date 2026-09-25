@@ -2,7 +2,6 @@ export interface IframeOptions {
   baseUrl: string
   token: string
   workspaceKey: string
-  configEnd: string
   theme: string
   autoResize: boolean
   /** #190: per-tab conversation id, forwarded to the chat so it scopes resume to this tab. */
@@ -14,7 +13,6 @@ export interface IframeOptions {
 }
 
 export function createIframe(container: HTMLElement, opts: IframeOptions): HTMLIFrameElement {
-  const slug = opts.configEnd.replace(/\//g, '-').replace(/^-/, '')
   const params = new URLSearchParams({ t: opts.token })
   if (opts.theme !== 'auto') params.set('theme', opts.theme)
   // #190: hand the per-tab id to the chat iframe. The chat forwards it on POST /session so the
@@ -23,10 +21,9 @@ export function createIframe(container: HTMLElement, opts: IframeOptions): HTMLI
   if (opts.tabId) params.set('tab', opts.tabId)
   // #238: flags the widget that a submit hand-off is coming (see IframeOptions.pendingSubmit).
   if (opts.pendingSubmit) params.set('ps', '1')
-  // The default endpoint (configEnd "/") has an empty slug → it is reached at the workspace
-  // root /{workspaceKey} with NO segment; named endpoints append their slug.
-  const path = slug ? `${opts.workspaceKey}/${slug}` : opts.workspaceKey
-  const src = `${opts.baseUrl}/${path}?${params}`
+  // Annotation 3.0: a chat is never bound to one endpoint — it opens at the workspace root and
+  // reaches whatever the opening context names or the user asks for.
+  const src = `${opts.baseUrl}/${opts.workspaceKey}?${params}`
 
   const iframe = document.createElement('iframe')
   iframe.src = src

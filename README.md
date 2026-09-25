@@ -69,7 +69,8 @@ const chat = await confiqure.open({
   target: '#confiqure-chat',
   token: tokenFromYourBackend,
   intent: 'The user clicked "Send to restocker" on the discovery panel.',
-  referentKeys: ['d20d07d7af15'],           // optional pre-selected instances
+  referentKeys: ['d20d07d7af15'],           // optional — each opens that record
+  toolClass: 'ListingsTool',                // optional (0.3.0) — opens the chat with this tool class loaded
   data: { restockList: [/* …the real DTO shape, real field names… */] }
 })
 
@@ -93,10 +94,27 @@ Rules of the road:
   invalid value rejects the whole submit — nothing partial is saved.
 - Page-JS context carries the same trust level as the user typing into the
   chat, and is marked host-authored to the model.
-- `open()` without `intent`/`referentKeys`/`data` behaves exactly like `init()`;
-  `chat.submission` is `null` then.
+- `toolClass` (0.3.0, annotation 3.0) names one of your `@Confiqure.Tool` classes —
+  the chat opens with it already loaded. An unknown name is ignored, never an error.
+- `open()` without `intent`/`referentKeys`/`toolClass`/`data` behaves exactly like
+  `init()`; `chat.submission` is `null` then.
 - `open()` supersedes the mint-time `openingContext` (still accepted for
   back-compat, scheduled for retirement).
+
+### Browser operations (0.3.0)
+
+A `@Confiqure.Browser` method of a tool class runs in your page. Register its handler
+keyed `"ToolClassName.operationName"`:
+
+```js
+confiqure.init({
+  target: '#confiqure-chat',
+  token: tokenFromYourBackend,
+  tools: {
+    'ListingsTool.openProduct360': async (input, ctx) => { /* open the view */ return { ok: true } }
+  }
+})
+```
 
 ### Option B: Client-side token fetch
 
@@ -106,12 +124,12 @@ The SDK calls your backend endpoint to get the token:
 const chat = await confiqure.init({
   target: '#confiqure-chat',
   tokenUrl: '/api/confiqure-token',
-  endUserHandle: 'user-123',
-  configEnd: 'notifications'
+  endUserHandle: 'user-123'
 })
 ```
 
 Your endpoint should call confiqure's `POST /api/{workspaceKey}/embed-tokens` with your API key and return `{ token: "eyJ..." }`.
+Since 0.3.0 (annotation 3.0) the SDK forwards only `endUserHandle` — the token names no endpoint, and the mint refuses `configEnd`.
 
 ## Events
 
@@ -130,7 +148,6 @@ chat.on('closed', (data) => { /* data.reason */ })
 | `token` | `string` | - | Pre-minted embed JWT |
 | `tokenUrl` | `string` | - | Your token endpoint |
 | `endUserHandle` | `string` | - | End-user ID (with tokenUrl) |
-| `configEnd` | `string` | - | Endpoint slug (with tokenUrl) |
 | `theme` | `'light' \| 'dark' \| 'auto'` | `'auto'` | Color mode |
 | `autoResize` | `boolean` | `false` | Auto-adjust height |
 | `baseUrl` | `string` | `'https://confiqure.ai'` | Page origin serving the chat iframe |

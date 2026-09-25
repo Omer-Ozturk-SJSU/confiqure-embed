@@ -62,6 +62,8 @@ function resolveTabId(): string | undefined {
 interface SubmitHandoff {
   intent?: string
   referentKeys?: string[]
+  /** Annotation 3.0: the tool class the chat opens with. */
+  toolClass?: string
   data?: Record<string, unknown>
 }
 
@@ -118,15 +120,17 @@ function normalizeHandoffData(raw: unknown): Record<string, unknown> {
 function extractHandoff(options: ConfiqureOpenOptions): SubmitHandoff | null {
   const hasIntent = typeof options.intent === 'string' && options.intent.trim().length > 0
   const hasRefs = Array.isArray(options.referentKeys) && options.referentKeys.length > 0
+  const toolClass = typeof options.toolClass === 'string' ? options.toolClass.trim() : ''
   // #243: normalize the data hand-off up front. A wrong shape or a non-cloneable reactive wrapper
   // THROWS here (rejecting the open() call in the host's console) instead of silently dropping or
   // hanging delivery later. An absent/empty data payload is not an error — it's simply no data.
   const data = options.data != null ? normalizeHandoffData(options.data) : undefined
   const hasData = data != null && Object.keys(data).length > 0
-  if (!hasIntent && !hasRefs && !hasData) return null
+  if (!hasIntent && !hasRefs && !toolClass && !hasData) return null
   return {
     intent: hasIntent ? options.intent : undefined,
     referentKeys: hasRefs ? options.referentKeys : undefined,
+    toolClass: toolClass || undefined,
     data: hasData ? data : undefined
   }
 }
@@ -137,7 +141,7 @@ async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
 
 /**
  * #238 — the ONE surface for opening a chat with context: `confiqure.open({ token, intent,
- * referentKeys, data })`. The session opens instantly (token-only — the chat paints
+ * referentKeys, toolClass, data })`. The session opens instantly (token-only — the chat paints
  * immediately); the context is then auto-submitted through the submit channel: `data` moves
  * as a single visible transfer (live progress block in the chat), is validated by the
  * endpoint's save gates server-side, and lands in the configuration draft. The chat model
@@ -145,7 +149,7 @@ async function init(options: ConfiqureInitOptions): Promise<ConfiqureChat> {
  * (or stall) the conversation. The outcome surfaces on the returned chat's `submission`
  * promise: a wrong shape or oversize payload rejects there, in your console, deterministically.
  *
- * `open()` without intent/referentKeys/data behaves exactly like `init()`.
+ * `open()` without intent/referentKeys/toolClass/data behaves exactly like `init()`.
  */
 async function open(options: ConfiqureOpenOptions): Promise<ConfiqureChat> {
   return mount(options, extractHandoff(options))
@@ -189,17 +193,17 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
   if (options.token) {
     token = options.token
   } else if (options.tokenUrl) {
-    if (!options.endUserHandle || !options.configEnd) {
-      throw new Error('confiqure: tokenUrl requires endUserHandle and configEnd')
+    if (!options.endUserHandle) {
+      throw new Error('confiqure: tokenUrl requires endUserHandle')
     }
-    token = await fetchToken(options.tokenUrl, options.endUserHandle, options.configEnd)
+    token = await fetchToken(options.tokenUrl, options.endUserHandle)
   } else {
     throw new Error('confiqure: either token or tokenUrl is required')
   }
 
   const claims = decodeTokenClaims(token)
-  if (!claims || !claims.workspaceKey || !claims.configEnd) {
-    throw new Error('confiqure: token is missing workspaceKey or configEnd claims')
+  if (!claims || !claims.workspaceKey) {
+    throw new Error('confiqure: token is missing the workspaceKey claim')
   }
 
   const bus = new EventBus(baseUrl)
@@ -218,7 +222,6 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
     baseUrl,
     token,
     workspaceKey: claims.workspaceKey,
-    configEnd: claims.configEnd,
     theme,
     autoResize,
     tabId: resolveTabId(),
@@ -296,7 +299,7 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
    * reported once, loudly, and answered with a refusal so the widget shows its "refresh the page"
    * state rather than waiting on an answer that will never come.
    */
-  const canRemint = Boolean(options.tokenUrl && options.endUserHandle && options.configEnd)
+  const canRemint = Boolean(options.tokenUrl && options.endUserHandle)
   let refreshTimer: ReturnType<typeof setTimeout> | undefined
   let mintInFlight: Promise<string | null> | null = null
 
@@ -320,13 +323,13 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
     if (!canRemint) {
       console.error(
         'confiqure: the chat session expired and cannot be renewed — this widget was mounted with a ' +
-        'literal `token`, so the SDK has no way to mint a new one. Pass `tokenUrl` (+ endUserHandle, ' +
-        'configEnd) so confiqure can refresh the session transparently, or re-mount the widget with a ' +
+        'literal `token`, so the SDK has no way to mint a new one. Pass `tokenUrl` (+ endUserHandle) ' +
+        'so confiqure can refresh the session transparently, or re-mount the widget with a ' +
         'fresh token. The user has been asked to reload the page.'
       )
       return Promise.resolve(null)
     }
-    mintInFlight = fetchToken(options.tokenUrl!, options.endUserHandle!, options.configEnd!)
+    mintInFlight = fetchToken(options.tokenUrl!, options.endUserHandle!)
       .then((fresh) => {
         token = fresh
         scheduleProactiveRefresh(fresh)
@@ -358,8 +361,7 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
   bus.configureTools(tools, postToIframe, options.toolTimeoutMs)
   // Best-effort: warn at init about declared frontend tools with no registered handler,
   // so the gap is visible the moment the page loads rather than mid-chat.
-  const slug = claims.configEnd.replace(/\//g, '-').replace(/^-/, '')
-  void validateToolHandlers(apiBaseUrl, claims.workspaceKey, slug, token, Object.keys(tools))
+  void validateToolHandlers(apiBaseUrl, claims.workspaceKey, token, Object.keys(tools))
 
   // #238: deliver the open() hand-off once the widget says it can receive it (session open +
   // bridge listener up — postMessage doesn't buffer), and surface the settled outcome as the
@@ -476,24 +478,19 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
 }
 
 /**
- * Fetch the frontend tools this endpoint declares and warn about any without a
- * registered handler. Best-effort: any failure (network, auth, missing endpoint)
+ * Fetch the browser operations the workspace declares (`ToolClassName.operationName`) and warn
+ * about any without a registered handler. Best-effort: any failure (network, auth, missing endpoint)
  * is swallowed — this is a dev convenience, never a hard dependency.
  */
 async function validateToolHandlers(
   apiBaseUrl: string,
   workspaceKey: string,
-  configName: string,
   token: string,
   registered: string[]
 ): Promise<void> {
   try {
-    // The default endpoint (empty slug) is reached at /api/{ws}/chat/... with NO segment;
-    // named endpoints keep their slug. Matches the backend route (configName optional).
-    const chatBase = configName
-      ? `${apiBaseUrl}/api/${workspaceKey}/chat/${configName}`
-      : `${apiBaseUrl}/api/${workspaceKey}/chat`
-    const url = `${chatBase}/frontend-tools?t=${encodeURIComponent(token)}`
+    // Annotation 3.0: the token names no endpoint, so the chat routes carry no endpoint segment.
+    const url = `${apiBaseUrl}/api/${workspaceKey}/chat/frontend-tools?t=${encodeURIComponent(token)}`
     const res = await fetch(url)
     if (!res.ok) {
       console.warn('[confiqure] frontend-tools discovery failed: ' + res.status + ' ' + url)
@@ -505,8 +502,8 @@ async function validateToolHandlers(
     const missing = declared.filter((name) => !have.has(name))
     for (const name of missing) {
       console.warn(
-        `confiqure: frontend tool "${name}" is declared on this endpoint but no handler was registered. ` +
-        `Add it to confiqure.init({ tools: { ${name}: async (input, ctx) => { ... } } }) or run \`confiqure scaffold\`.`
+        `confiqure: browser operation "${name}" is declared in your workspace but no handler was registered. ` +
+        `Add it to confiqure.init({ tools: { '${name}': async (input, ctx) => { ... } } }).`
       )
     }
   } catch {

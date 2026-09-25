@@ -23,8 +23,8 @@ export interface ConfiqureInitOptions {
   target: string | HTMLElement
   token?: string
   tokenUrl?: string
+  /** Only with `tokenUrl`: forwarded to your token endpoint. */
   endUserHandle?: string
-  configEnd?: string
   theme?: 'light' | 'dark' | 'auto'
   autoResize?: boolean
   /**
@@ -38,10 +38,11 @@ export interface ConfiqureInitOptions {
    */
   apiBaseUrl?: string
   /**
-   * Handlers for frontend tools (declared `serverSide=false` in the host's
-   * `@Confiqure.Tool` methods). Keyed by tool name. The SDK runs the matching
-   * handler when the chat agent calls the tool, then returns its result to the
-   * conversation. Missing handlers are warned about at init.
+   * Handlers for browser operations — the `@Confiqure.Browser` methods of your
+   * `@Confiqure.Tool` classes. Keyed `"ToolClassName.operationName"` (e.g.
+   * `"ListingsTool.openProduct360"`). The SDK runs the matching handler when the chat
+   * calls the operation, then returns its result to the conversation. Missing handlers
+   * are warned about at init.
    */
   tools?: Record<string, ToolHandler>
   /** Per-tool timeout in ms before the call is aborted and reported as an error. Default 120000. */
@@ -49,9 +50,8 @@ export interface ConfiqureInitOptions {
 }
 
 /**
- * #238 — `confiqure.open()` options: everything `init` takes, plus the opening context that
- * used to ride the server-side mint (`openingContext`). The session opens token-only and
- * instantly; `intent`/`referentKeys`/`data` are handed to the chat AFTER open through the
+ * #238 — `confiqure.open()` options: everything `init` takes, plus the opening context. The
+ * session opens token-only and instantly; `intent`/`referentKeys`/`toolClass`/`data` are handed to the chat AFTER open through the
  * submit channel — `data` moves as one visible transfer (live progress block in the chat),
  * is validated by the endpoint's save gates, and lands in the configuration draft. The model
  * only ever sees a count-reference, never the payload.
@@ -64,6 +64,12 @@ export interface ConfiqureOpenOptions extends ConfiqureInitOptions {
   intent?: string
   /** Pre-selected referent instances (confiqureKeys owned by this user); ≤ 8, validated server-side. */
   referentKeys?: string[]
+  /**
+   * Annotation 3.0: a tool-class name (a `@Confiqure.Tool` class of your workspace) the chat
+   * opens with already loaded — e.g. `'ListingsTool'` on your Listings page. An unknown name is
+   * ignored by confiqure, never an error.
+   */
+  toolClass?: string
   /**
    * The data hand-off: the REAL DTO shape keyed by your endpoint's real field names
    * (e.g. `{ restockList: [...] }`). Max 10 MB serialized — larger belongs in the
@@ -95,7 +101,7 @@ export interface ConfiqureChat {
    * #238: resolves when the open() hand-off (intent/data) has been delivered — rejected (with
    * the gate's reasons on the Error's `result` property) when the submit was refused, so a
    * wrong shape or an oversize payload fails loudly in YOUR console, not silently mid-chat.
-   * Null when open()/init() was called without intent/referentKeys/data.
+   * Null when open()/init() was called without intent/referentKeys/toolClass/data.
    */
   submission: Promise<SubmitResult> | null
   /**
