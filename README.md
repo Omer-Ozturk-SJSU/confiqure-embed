@@ -149,6 +149,7 @@ chat.on('closed', (data) => { /* data.reason */ })
 | `tokenUrl` | `string` | - | Your token endpoint |
 | `endUserHandle` | `string` | - | End-user ID (with tokenUrl) |
 | `theme` | `'light' \| 'dark' \| 'auto'` | `'auto'` | Color mode |
+| `look` | `'phosphor' \| 'tairo' \| 'shadcn' \| 'material' \| 'bootstrap'` | the dashboard's | The chat's ready-made look (0.3.2); see below |
 | `accent` | `string` | - | Your app's accent hue (0.3.1) — a hex of 3/4/6/8 digits or an `rgb()`/`hsl()` form; see below |
 | `autoResize` | `boolean` | `false` | Auto-adjust height |
 | `baseUrl` | `string` | `'https://confiqure.ai'` | Page origin serving the chat iframe |
@@ -181,6 +182,25 @@ chat.setStyle({ theme: 'dark', accent: 'hsl(246 100% 68%)' })   // either key, o
 else (a named colour, `var(--brand)`, …) is ignored with a console warning, and the chat checks the
 value again on its side with the same rule. `setTheme(mode)` still works exactly as before; it is the
 same as `setStyle({ theme: mode })`.
+
+### Ready-made looks — `look` (0.3.2)
+
+The chat ships five looks, each a full set of surfaces, radii, shadows and input style with a day and
+a night side: `phosphor` (confiqure's own, the default), `tairo`, `shadcn`, `material` and `bootstrap`
+— pick the one shaped like the kit your app is built with. `theme` still picks day or night, and
+your `accent` sits on top of any look:
+
+```js
+const chat = await confiqure.open({ target, token, look: 'shadcn', theme: 'light', accent: '#6b5bff' })
+chat.setStyle({ look: 'material' })   // look, theme, accent — any mix, live, no reload
+```
+
+Most apps need no code for this: the look, the mode and the accent are a workspace setting in the
+confiqure dashboard (Settings → chat widget look), and the chat reads it when it opens. What you pass
+wins over it, for that page only — highest first: a live `setStyle()`/`setTheme()`, then the
+`open()`/`init()` options, then the dashboard setting, then (for the mode) the visitor's OS. A
+dashboard mode of light or dark applies when your page passes no `theme` or `'auto'`. An unknown
+`look` name is ignored with a console warning.
 
 ## Cleanup
 

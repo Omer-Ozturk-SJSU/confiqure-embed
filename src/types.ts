@@ -1,3 +1,7 @@
+import type { ConfiqureLook } from './look.js'
+
+export type { ConfiqureLook } from './look.js'
+
 /**
  * Context passed to a frontend-tool handler. Deliberately minimal and generic —
  * no domain helpers (OAuth, pickers, etc.). The handler's job is the business
@@ -26,6 +30,15 @@ export interface ConfiqureInitOptions {
   /** Only with `tokenUrl`: forwarded to your token endpoint. */
   endUserHandle?: string
   theme?: 'light' | 'dark' | 'auto'
+  /**
+   * The chat's ready-made LOOK — a full set of surfaces, radii, shadows and input style shaped
+   * like the UI kit your app is built with: `'phosphor'` (confiqure's own, the default), `'tairo'`,
+   * `'shadcn'`, `'material'` or `'bootstrap'`. Each has a day and a night side, picked by `theme`;
+   * your `accent` sits on top of any look. Overrides the look saved in the confiqure dashboard
+   * for this page only. An unknown name is ignored with a console warning. Change it live with
+   * {@link ConfiqureChat.setStyle}.
+   */
+  look?: ConfiqureLook
   /**
    * Your app's ONE accent hue — a CSS colour string: a hex of 3/4/6/8 digits (`'#6b5bff'`) or an
    * `rgb()`/`hsl()` form. The chat keeps its own light/dark surfaces and paints its accented parts
@@ -129,17 +142,20 @@ export interface ConfiqureChat {
    */
   setTheme(theme: 'light' | 'dark' | 'auto'): void
   /**
-   * Change the chat's colour mode, its accent hue, or both, live, with no reload — e.g.
-   * `chat.setStyle({ theme: 'dark', accent: '#6b5bff' })`. `theme` behaves exactly like
-   * {@link ConfiqureChat.setTheme}; `accent` follows the `accent` init option's rule. An invalid
-   * value is warned about and ignored (the valid half of the call still applies). A call made
-   * before the chat is ready is applied as soon as it is; after `destroy()` it does nothing.
+   * Change the chat's look, its colour mode, its accent hue, or any mix of them, live, with no
+   * reload — e.g. `chat.setStyle({ look: 'shadcn', theme: 'dark', accent: '#6b5bff' })`. `theme`
+   * behaves exactly like {@link ConfiqureChat.setTheme}; `look` and `accent` follow their init
+   * options' rules. An invalid value is warned about and ignored (the valid part of the call still
+   * applies). A call made before the chat is ready is applied as soon as it is; after `destroy()`
+   * it does nothing.
    */
   setStyle(style: ConfiqureStyle): void
 }
 
 /** The live style a host can hand the chat through {@link ConfiqureChat.setStyle}. */
 export interface ConfiqureStyle {
+  /** One of the ready-made looks: 'phosphor' | 'tairo' | 'shadcn' | 'material' | 'bootstrap' (embed 0.3.2). */
+  look?: ConfiqureLook
   theme?: 'light' | 'dark' | 'auto'
   /** A CSS colour string: a hex of 3/4/6/8 digits, or an `rgb()`/`hsl()` form. */
   accent?: string
@@ -169,8 +185,9 @@ export interface ConfiqureMessage {
   token?: string
   // confiqure:theme (host -> iframe) — chat.setTheme(): the colour mode the widget should show now.
   theme?: 'light' | 'dark' | 'auto'
-  // confiqure:style (host -> iframe) — chat.setStyle(): the mode and/or the accent hue to show now.
+  // confiqure:style (host -> iframe) — chat.setStyle(): the look, the mode and/or the accent hue to show now.
   accent?: string
+  look?: ConfiqureLook
   submissionId?: number | null
   confiqureKey?: string
   itemCount?: number | null

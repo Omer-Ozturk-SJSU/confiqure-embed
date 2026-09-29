@@ -3,6 +3,7 @@ import { fetchToken, decodeTokenClaims } from './token.js'
 import { EventBus, FLUSH_CAP_MS } from './events.js'
 import { createIframe, destroyIframe } from './iframe.js'
 import { isCssColor } from './color.js'
+import { isLook, LOOKS, type ConfiqureLook } from './look.js'
 
 const DEFAULT_BASE_URL = 'https://confiqure.ai'
 const DEFAULT_API_BASE_URL = 'https://api.confiqure.ai'
@@ -82,6 +83,21 @@ function readAccent(raw: unknown, where: string): string | undefined {
   console.warn(
     `confiqure: ${where} must be a CSS colour — a hex of 3/4/6/8 digits ('#6b5bff') or an ` +
     `rgb()/hsl() form — got ${JSON.stringify(raw)}; ignored.`
+  )
+  return undefined
+}
+
+/**
+ * The host's look, checked against the ready-made looks (./look.ts). `undefined` means "not
+ * given"; any other value that is not one of the names is warned about and dropped — the chat
+ * keeps the look saved in the dashboard (or its own) rather than guessing.
+ */
+function readLook(raw: unknown, where: string): ConfiqureLook | undefined {
+  if (raw === undefined) return undefined
+  if (isLook(raw)) return raw
+  console.warn(
+    `confiqure: ${where} must be one of ${LOOKS.map((l) => `'${l}'`).join(', ')} — got ` +
+    `${JSON.stringify(raw)}; ignored.`
   )
   return undefined
 }
@@ -207,6 +223,9 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
   // later setStyle() crosses as a `confiqure:style` message, re-sent at `ready` for the same reason.
   const accent = readAccent(options.accent, 'the accent option')
   let currentAccent = accent
+  // …and so does the look: `look=` at open, `confiqure:style` after (embed 0.3.2).
+  const look = readLook(options.look, 'the look option')
+  let currentLook = look
   const autoResize = options.autoResize ?? false
 
   const container = typeof options.target === 'string'
@@ -251,6 +270,7 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
     workspaceKey: claims.workspaceKey,
     theme,
     accent,
+    look,
     autoResize,
     tabId: resolveTabId(),
     // #238: only the FLAG rides the URL — the hand-off content itself crosses via
@@ -439,14 +459,17 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
 
   bus.on('ready', () => {
     if (currentTheme !== theme) postToIframe({ type: 'confiqure:theme', theme: currentTheme })
-    if (currentAccent !== accent) postToIframe({ type: 'confiqure:style', accent: currentAccent })
+    const changed: ConfiqureMessage = { type: 'confiqure:style' }
+    if (currentLook !== look) changed.look = currentLook
+    if (currentAccent !== accent) changed.accent = currentAccent
+    if (changed.look !== undefined || changed.accent !== undefined) postToIframe(changed)
   })
 
   let teardownStarted = false
 
   /**
-   * setTheme() and setStyle() share this: validate each half, remember it for the `ready`
-   * re-send, post what survived. setTheme() keeps its own `confiqure:theme` message so a widget
+   * setTheme() and setStyle() share this: validate each part (look, mode, accent), remember it for
+   * the `ready` re-send, post what survived. setTheme() keeps its own `confiqure:theme` message so a widget
    * build that predates `confiqure:style` still follows it; the widget treats the two alike.
    */
   const applyStyle = (
@@ -464,9 +487,14 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
       const next = readAccent(style.accent, `${method} accent`)
       if (next !== undefined) msg.accent = next
     }
-    if (msg.theme === undefined && msg.accent === undefined) return
+    if (style.look !== undefined) {
+      const next = readLook(style.look, `${method} look`)
+      if (next !== undefined) msg.look = next
+    }
+    if (msg.theme === undefined && msg.accent === undefined && msg.look === undefined) return
     if (msg.theme !== undefined) currentTheme = msg.theme
     if (msg.accent !== undefined) currentAccent = msg.accent
+    if (msg.look !== undefined) currentLook = msg.look
     if (!teardownStarted) postToIframe(msg)
   }
 
@@ -485,8 +513,9 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
       applyStyle({ theme: next }, 'confiqure:theme', 'setTheme() expects', 'setTheme()')
     },
     setStyle(next) {
-      if (typeof next !== 'object' || next === null || (next.theme === undefined && next.accent === undefined)) {
-        console.warn(`confiqure: setStyle() expects { theme?, accent? } — got ${JSON.stringify(next)}; nothing to apply.`)
+      if (typeof next !== 'object' || next === null
+        || (next.theme === undefined && next.accent === undefined && next.look === undefined)) {
+        console.warn(`confiqure: setStyle() expects { look?, theme?, accent? } — got ${JSON.stringify(next)}; nothing to apply.`)
         return
       }
       applyStyle(next, 'confiqure:style', 'setStyle() expects theme', 'setStyle()')
@@ -571,6 +600,6 @@ async function validateToolHandlers(
 
 export { init, open }
 export type {
-  ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, ConfiqureStyle, SubmitResult,
+  ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, ConfiqureStyle, ConfiqureLook, SubmitResult,
   ToolHandler, ToolContext
 } from './types.js'
