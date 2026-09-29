@@ -26,6 +26,14 @@ export interface ConfiqureInitOptions {
   /** Only with `tokenUrl`: forwarded to your token endpoint. */
   endUserHandle?: string
   theme?: 'light' | 'dark' | 'auto'
+  /**
+   * Your app's ONE accent hue — a CSS colour string: a hex of 3/4/6/8 digits (`'#6b5bff'`) or an
+   * `rgb()`/`hsl()` form. The chat keeps its own light/dark surfaces and paints its accented parts
+   * with it: primary buttons, the send button, focus rings, links and the agent mark (a
+   * destructive action keeps its red). Anything else is ignored with a console warning. Change it
+   * live with {@link ConfiqureChat.setStyle}.
+   */
+  accent?: string
   autoResize?: boolean
   /**
    * The confiqure PAGE origin that serves the chat iframe; default `https://confiqure.ai`.
@@ -120,6 +128,21 @@ export interface ConfiqureChat {
    * Pair it with the `theme` init option so the chat also OPENS in your current mode.
    */
   setTheme(theme: 'light' | 'dark' | 'auto'): void
+  /**
+   * Change the chat's colour mode, its accent hue, or both, live, with no reload — e.g.
+   * `chat.setStyle({ theme: 'dark', accent: '#6b5bff' })`. `theme` behaves exactly like
+   * {@link ConfiqureChat.setTheme}; `accent` follows the `accent` init option's rule. An invalid
+   * value is warned about and ignored (the valid half of the call still applies). A call made
+   * before the chat is ready is applied as soon as it is; after `destroy()` it does nothing.
+   */
+  setStyle(style: ConfiqureStyle): void
+}
+
+/** The live style a host can hand the chat through {@link ConfiqureChat.setStyle}. */
+export interface ConfiqureStyle {
+  theme?: 'light' | 'dark' | 'auto'
+  /** A CSS colour string: a hex of 3/4/6/8 digits, or an `rgb()`/`hsl()` form. */
+  accent?: string
 }
 
 export interface ConfiqureMessage {
@@ -146,6 +169,8 @@ export interface ConfiqureMessage {
   token?: string
   // confiqure:theme (host -> iframe) — chat.setTheme(): the colour mode the widget should show now.
   theme?: 'light' | 'dark' | 'auto'
+  // confiqure:style (host -> iframe) — chat.setStyle(): the mode and/or the accent hue to show now.
+  accent?: string
   submissionId?: number | null
   confiqureKey?: string
   itemCount?: number | null

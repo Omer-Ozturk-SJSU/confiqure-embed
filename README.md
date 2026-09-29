@@ -149,6 +149,7 @@ chat.on('closed', (data) => { /* data.reason */ })
 | `tokenUrl` | `string` | - | Your token endpoint |
 | `endUserHandle` | `string` | - | End-user ID (with tokenUrl) |
 | `theme` | `'light' \| 'dark' \| 'auto'` | `'auto'` | Color mode |
+| `accent` | `string` | - | Your app's accent hue (0.3.1) — a hex of 3/4/6/8 digits or an `rgb()`/`hsl()` form; see below |
 | `autoResize` | `boolean` | `false` | Auto-adjust height |
 | `baseUrl` | `string` | `'https://confiqure.ai'` | Page origin serving the chat iframe |
 | `apiBaseUrl` | `string` | `'https://api.confiqure.ai'` | API origin for host-page calls (frontend-tools discovery) |
@@ -163,6 +164,23 @@ live, with no reload:
 const chat = await confiqure.init({ target, token, theme: isDark() ? 'dark' : 'light' })
 onYourThemeToggle((dark) => chat.setTheme(dark ? 'dark' : 'light'))   // 'light' | 'dark' | 'auto'
 ```
+
+### Your accent colour — `accent` and `chat.setStyle()` (0.3.1)
+
+Hand the chat your app's ONE accent hue and it paints its accented parts with it — primary
+buttons, the send button, focus rings, links and the agent mark. It keeps its own light/dark
+surfaces (and a destructive action keeps its red), so one hue works in both modes. Pass it at open,
+and change the mode, the hue, or both live with `setStyle()`:
+
+```js
+const chat = await confiqure.open({ target, token, theme: 'light', accent: '#6b5bff' })
+chat.setStyle({ theme: 'dark', accent: 'hsl(246 100% 68%)' })   // either key, or both — no reload
+```
+
+`accent` is a CSS colour string: a hex of 3, 4, 6 or 8 digits, or an `rgb()`/`hsl()` form. Anything
+else (a named colour, `var(--brand)`, …) is ignored with a console warning, and the chat checks the
+value again on its side with the same rule. `setTheme(mode)` still works exactly as before; it is the
+same as `setStyle({ theme: mode })`.
 
 ## Cleanup
 

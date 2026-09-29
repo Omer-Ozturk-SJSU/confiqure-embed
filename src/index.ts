@@ -1,7 +1,8 @@
-import type { ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, SubmitResult } from './types.js'
+import type { ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, ConfiqureStyle, ConfiqureMessage, SubmitResult } from './types.js'
 import { fetchToken, decodeTokenClaims } from './token.js'
 import { EventBus, FLUSH_CAP_MS } from './events.js'
 import { createIframe, destroyIframe } from './iframe.js'
+import { isCssColor } from './color.js'
 
 const DEFAULT_BASE_URL = 'https://confiqure.ai'
 const DEFAULT_API_BASE_URL = 'https://api.confiqure.ai'
@@ -65,6 +66,28 @@ interface SubmitHandoff {
   /** Annotation 3.0: the tool class the chat opens with. */
   toolClass?: string
   data?: Record<string, unknown>
+}
+
+/**
+ * The host's accent hue, checked against the one colour rule (./color.ts). `undefined` means "not
+ * given"; any other value that is not a CSS colour is warned about and dropped — the chat keeps
+ * its own look rather than receiving something it cannot paint. Surrounding whitespace is
+ * forgiven: a value read with getComputedStyle().getPropertyValue('--brand') carries a leading
+ * space.
+ */
+function readAccent(raw: unknown, where: string): string | undefined {
+  if (raw === undefined) return undefined
+  const v = typeof raw === 'string' ? raw.trim() : raw
+  if (isCssColor(v)) return v
+  console.warn(
+    `confiqure: ${where} must be a CSS colour — a hex of 3/4/6/8 digits ('#6b5bff') or an ` +
+    `rgb()/hsl() form — got ${JSON.stringify(raw)}; ignored.`
+  )
+  return undefined
+}
+
+function isThemeMode(v: unknown): v is 'light' | 'dark' | 'auto' {
+  return v === 'light' || v === 'dark' || v === 'auto'
 }
 
 function describe(v: unknown): string {
@@ -180,6 +203,10 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
   // host switches to later crosses as a `confiqure:theme` message (and is re-sent at `ready`,
   // because a message posted before the widget listens is simply lost — postMessage doesn't buffer).
   let currentTheme = theme
+  // The accent travels the same two ways: the URL carries the open-time hue (`accent=`), and a
+  // later setStyle() crosses as a `confiqure:style` message, re-sent at `ready` for the same reason.
+  const accent = readAccent(options.accent, 'the accent option')
+  let currentAccent = accent
   const autoResize = options.autoResize ?? false
 
   const container = typeof options.target === 'string'
@@ -223,6 +250,7 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
     token,
     workspaceKey: claims.workspaceKey,
     theme,
+    accent,
     autoResize,
     tabId: resolveTabId(),
     // #238: only the FLAG rides the URL — the hand-off content itself crosses via
@@ -411,9 +439,37 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
 
   bus.on('ready', () => {
     if (currentTheme !== theme) postToIframe({ type: 'confiqure:theme', theme: currentTheme })
+    if (currentAccent !== accent) postToIframe({ type: 'confiqure:style', accent: currentAccent })
   })
 
   let teardownStarted = false
+
+  /**
+   * setTheme() and setStyle() share this: validate each half, remember it for the `ready`
+   * re-send, post what survived. setTheme() keeps its own `confiqure:theme` message so a widget
+   * build that predates `confiqure:style` still follows it; the widget treats the two alike.
+   */
+  const applyStyle = (
+    style: ConfiqureStyle,
+    type: 'confiqure:theme' | 'confiqure:style',
+    themeHint: string,
+    method: string
+  ): void => {
+    const msg: ConfiqureMessage = { type }
+    if (style.theme !== undefined) {
+      if (isThemeMode(style.theme)) msg.theme = style.theme
+      else console.warn(`confiqure: ${themeHint} 'light', 'dark' or 'auto' — got ${JSON.stringify(style.theme)}; ignored.`)
+    }
+    if (style.accent !== undefined) {
+      const next = readAccent(style.accent, `${method} accent`)
+      if (next !== undefined) msg.accent = next
+    }
+    if (msg.theme === undefined && msg.accent === undefined) return
+    if (msg.theme !== undefined) currentTheme = msg.theme
+    if (msg.accent !== undefined) currentAccent = msg.accent
+    if (!teardownStarted) postToIframe(msg)
+  }
+
   const teardown = () => {
     bus.stopListening()
     destroyIframe(iframe)
@@ -426,12 +482,14 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
     },
     submission,
     setTheme(next) {
-      if (next !== 'light' && next !== 'dark' && next !== 'auto') {
-        console.warn(`confiqure: setTheme() expects 'light', 'dark' or 'auto' — got ${JSON.stringify(next)}; ignored.`)
+      applyStyle({ theme: next }, 'confiqure:theme', 'setTheme() expects', 'setTheme()')
+    },
+    setStyle(next) {
+      if (typeof next !== 'object' || next === null || (next.theme === undefined && next.accent === undefined)) {
+        console.warn(`confiqure: setStyle() expects { theme?, accent? } — got ${JSON.stringify(next)}; nothing to apply.`)
         return
       }
-      currentTheme = next
-      if (!teardownStarted) postToIframe({ type: 'confiqure:theme', theme: next })
+      applyStyle(next, 'confiqure:style', 'setStyle() expects theme', 'setStyle()')
     },
     /**
      * #321 — teardown flushes in-flight tool replies first.
@@ -513,6 +571,6 @@ async function validateToolHandlers(
 
 export { init, open }
 export type {
-  ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, SubmitResult,
+  ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, ConfiqureStyle, SubmitResult,
   ToolHandler, ToolContext
 } from './types.js'

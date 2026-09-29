@@ -3,6 +3,8 @@ export interface IframeOptions {
   token: string
   workspaceKey: string
   theme: string
+  /** The host's accent hue, already validated (isCssColor); rides the URL as `accent=`. */
+  accent?: string
   autoResize: boolean
   /** #190: per-tab conversation id, forwarded to the chat so it scopes resume to this tab. */
   tabId?: string
@@ -15,6 +17,7 @@ export interface IframeOptions {
 export function createIframe(container: HTMLElement, opts: IframeOptions): HTMLIFrameElement {
   const params = new URLSearchParams({ t: opts.token })
   if (opts.theme !== 'auto') params.set('theme', opts.theme)
+  if (opts.accent) params.set('accent', opts.accent)
   // #190: hand the per-tab id to the chat iframe. The chat forwards it on POST /session so the
   // backend keeps each browser tab in its own conversation space. Re-passed on every (re)mount, so
   // an iframe the host tears down and re-adds lands back on the same conversation.
