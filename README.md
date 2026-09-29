@@ -149,6 +149,8 @@ chat.on('closed', (data) => { /* data.reason */ })
 | `tokenUrl` | `string` | - | Your token endpoint |
 | `endUserHandle` | `string` | - | End-user ID (with tokenUrl) |
 | `theme` | `'light' \| 'dark' \| 'auto'` | `'auto'` | Color mode |
+| `look` | `'phosphor' \| 'tairo' \| 'shadcn' \| 'material' \| 'bootstrap'` | the dashboard's | The chat's ready-made look (0.3.2); see below |
+| `accent` | `string` | - | Your app's accent hue (0.3.1) — a hex of 3/4/6/8 digits or an `rgb()`/`hsl()` form; see below |
 | `autoResize` | `boolean` | `false` | Auto-adjust height |
 | `baseUrl` | `string` | `'https://confiqure.ai'` | Page origin serving the chat iframe |
 | `apiBaseUrl` | `string` | `'https://api.confiqure.ai'` | API origin for host-page calls (frontend-tools discovery) |
@@ -163,6 +165,47 @@ live, with no reload:
 const chat = await confiqure.init({ target, token, theme: isDark() ? 'dark' : 'light' })
 onYourThemeToggle((dark) => chat.setTheme(dark ? 'dark' : 'light'))   // 'light' | 'dark' | 'auto'
 ```
+
+### Your accent colour — `accent` and `chat.setStyle()` (0.3.1)
+
+Hand the chat your app's ONE accent hue: it fills the primary buttons and the send button with it,
+and tints links, focus rings and the agent mark with it (blended toward the chat's own text colour
+so they stay readable on either background). It keeps its own light/dark surfaces, so one hue works
+in both modes; a confirmation on a card (consent, delete) keeps the chat's neutral button and a
+destructive action keeps its red. Pass it at open, and change the mode, the hue, or both live with
+`setStyle()`:
+
+```js
+const chat = await confiqure.open({ target, token, theme: 'light', accent: '#6b5bff' })
+chat.setStyle({ theme: 'dark', accent: 'hsl(246 100% 68%)' })   // either key, or both — no reload
+```
+
+`accent` is a CSS colour string: a hex of 3, 4, 6 or 8 digits, or an `rgb()`/`hsl()` form. Anything
+else (a named colour, `var(--brand)`, …) is ignored with a console warning, and the chat checks the
+value again on its side with the same rule. An alpha is accepted but dropped: the chat paints your
+hue opaque. An accent cannot be cleared live — to drop it, re-open the chat without one.
+`setTheme(mode)` still works exactly as before: it is the older single-field call, sending the mode
+alone as `confiqure:theme`, which every widget version follows; `setStyle({ theme: mode })` sends
+`confiqure:style`, which only widgets from 0.3.1 on understand.
+
+### Ready-made looks — `look` (0.3.2)
+
+The chat ships five looks, each a full set of surfaces, radii, shadows and input style with a day and
+a night side: `phosphor` (confiqure's own, the default), `tairo`, `shadcn`, `material` and `bootstrap`
+— pick the one shaped like the kit your app is built with. `theme` still picks day or night, and
+your `accent` sits on top of any look:
+
+```js
+const chat = await confiqure.open({ target, token, look: 'shadcn', theme: 'light', accent: '#6b5bff' })
+chat.setStyle({ look: 'material' })   // look, theme, accent — any mix, live, no reload
+```
+
+Most apps need no code for this: the look, the mode and the accent are a workspace setting in the
+confiqure dashboard (Settings → chat widget look), and the chat reads it when it opens. What you pass
+wins over it, for that page only — highest first: a live `setStyle()`/`setTheme()`, then the
+`open()`/`init()` options, then the dashboard setting, then (for the mode) the visitor's OS. A
+dashboard mode of light or dark applies when your page passes no `theme` or `'auto'`. An unknown
+`look` name is ignored with a console warning.
 
 ## Cleanup
 
