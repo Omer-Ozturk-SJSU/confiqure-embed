@@ -184,7 +184,9 @@ chat.setStyle({ theme: 'dark', accent: 'hsl(246 100% 68%)' })   // either key, o
 else (a named colour, `var(--brand)`, …) is ignored with a console warning, and the chat checks the
 value again on its side with the same rule. An alpha is accepted but dropped: the chat paints your
 hue opaque. An accent cannot be cleared live — to drop it, re-open the chat without one.
-`setTheme(mode)` still works exactly as before; it is the same as `setStyle({ theme: mode })`.
+`setTheme(mode)` still works exactly as before: it is the older single-field call, sending the mode
+alone as `confiqure:theme`, which every widget version follows; `setStyle({ theme: mode })` sends
+`confiqure:style`, which only widgets from 0.3.1 on understand.
 
 ### Ready-made looks — `look` (0.3.2)
 
