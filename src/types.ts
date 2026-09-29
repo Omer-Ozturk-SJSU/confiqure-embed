@@ -28,10 +28,11 @@ export interface ConfiqureInitOptions {
   theme?: 'light' | 'dark' | 'auto'
   /**
    * Your app's ONE accent hue — a CSS colour string: a hex of 3/4/6/8 digits (`'#6b5bff'`) or an
-   * `rgb()`/`hsl()` form. The chat keeps its own light/dark surfaces and paints its accented parts
-   * with it: primary buttons, the send button, focus rings, links and the agent mark (a
-   * destructive action keeps its red). Anything else is ignored with a console warning. Change it
-   * live with {@link ConfiqureChat.setStyle}.
+   * `rgb()`/`hsl()` form. The chat keeps its own light/dark surfaces, fills its primary buttons and
+   * send button with the hue and tints links, focus rings and the agent mark with it (a card's
+   * confirmation keeps the neutral button, a destructive action keeps its red). An alpha is
+   * dropped — the hue is painted opaque. Anything else is ignored with a console warning. Change
+   * it live with {@link ConfiqureChat.setStyle}; it cannot be cleared live (re-open without one).
    */
   accent?: string
   autoResize?: boolean
@@ -131,7 +132,8 @@ export interface ConfiqureChat {
   /**
    * Change the chat's colour mode, its accent hue, or both, live, with no reload — e.g.
    * `chat.setStyle({ theme: 'dark', accent: '#6b5bff' })`. `theme` behaves exactly like
-   * {@link ConfiqureChat.setTheme}; `accent` follows the `accent` init option's rule. An invalid
+   * {@link ConfiqureChat.setTheme}; `accent` follows the `accent` init option's rule (and, like it,
+   * cannot be cleared — re-open the chat without one to drop it). An invalid
    * value is warned about and ignored (the valid half of the call still applies). A call made
    * before the chat is ready is applied as soon as it is; after `destroy()` it does nothing.
    */

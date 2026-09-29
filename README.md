@@ -167,10 +167,12 @@ onYourThemeToggle((dark) => chat.setTheme(dark ? 'dark' : 'light'))   // 'light'
 
 ### Your accent colour — `accent` and `chat.setStyle()` (0.3.1)
 
-Hand the chat your app's ONE accent hue and it paints its accented parts with it — primary
-buttons, the send button, focus rings, links and the agent mark. It keeps its own light/dark
-surfaces (and a destructive action keeps its red), so one hue works in both modes. Pass it at open,
-and change the mode, the hue, or both live with `setStyle()`:
+Hand the chat your app's ONE accent hue: it fills the primary buttons and the send button with it,
+and tints links, focus rings and the agent mark with it (blended toward the chat's own text colour
+so they stay readable on either background). It keeps its own light/dark surfaces, so one hue works
+in both modes; a confirmation on a card (consent, delete) keeps the chat's neutral button and a
+destructive action keeps its red. Pass it at open, and change the mode, the hue, or both live with
+`setStyle()`:
 
 ```js
 const chat = await confiqure.open({ target, token, theme: 'light', accent: '#6b5bff' })
@@ -179,8 +181,9 @@ chat.setStyle({ theme: 'dark', accent: 'hsl(246 100% 68%)' })   // either key, o
 
 `accent` is a CSS colour string: a hex of 3, 4, 6 or 8 digits, or an `rgb()`/`hsl()` form. Anything
 else (a named colour, `var(--brand)`, …) is ignored with a console warning, and the chat checks the
-value again on its side with the same rule. `setTheme(mode)` still works exactly as before; it is the
-same as `setStyle({ theme: mode })`.
+value again on its side with the same rule. An alpha is accepted but dropped: the chat paints your
+hue opaque. An accent cannot be cleared live — to drop it, re-open the chat without one.
+`setTheme(mode)` still works exactly as before; it is the same as `setStyle({ theme: mode })`.
 
 ## Cleanup
 
