@@ -70,7 +70,8 @@ const VALID = [
   'rgb(107, 91, 255)', 'rgba(107,91,255,0.5)', 'rgb(40%, 30%, 100%)', 'rgb(107 91 255)',
   'rgb(107 91 255 / 50%)', 'rgba(107 91 255 / .5)',
   'hsl(246, 100%, 68%)', 'hsla(246deg, 100%, 68%, 0.8)', 'hsl(246 100% 68%)', 'hsl(-30 50% 50% / 1)',
-  'hsl(0.5turn 60% 40%)', 'HSL(246, 100%, 68%)'
+  'hsl(0.5turn 60% 40%)', 'HSL(246, 100%, 68%)',
+  'rgb(1\t2\n3)', 'rgb(1,\f2,\r3)'
 ]
 const INVALID = [
   '', ' #6b5bff', '6b5bff', '#12', '#12345', '#1234567', '#ggg', 'red', 'transparent', 'currentColor',
@@ -78,6 +79,9 @@ const INVALID = [
   'rgb(1,2,3);background:url(x)', 'rgb(1 2 3) ', 'hsl(246, 100, 68)', 'hsl(246 100 68)',
   'rgb(1e2, 0, 0)', 'oklch(60% .2 280)', 'linear-gradient(red, blue)', '#' + 'a'.repeat(64),
   'rgb(' + '1'.repeat(70) + ', 0, 0)',
+  // whitespace CSS does not parse between channels: NBSP, VT, U+2028, BOM, U+3000, U+1680
+  'rgb(1\u00a02\u00a03)', 'rgb(107\u00a091\u00a0255)', 'rgb(1\v2\v3)', 'hsl(1\u20282%\u20283%)',
+  'rgb(1,\ufeff2,3)', 'hsl(1\u30002%\u30003%)', 'rgb(1\u16802\u16803)',
   null, undefined, 0x6b5bff, {}, ['#fff']
 ]
 
@@ -109,9 +113,21 @@ test('an rgb()/hsl() accent survives the URL round trip exactly', async () => {
 })
 
 test('surrounding whitespace is forgiven (a getPropertyValue read carries a leading space)', async () => {
+  for (const accent of [' #6b5bff\n', '\u00a0#6b5bff\ufeff']) {
+    const h = harness()
+    const chat = await init({ target: h.target, token: makeToken(), accent })
+    assert.equal(accentParam(h), '#6b5bff')
+    chat.destroy()
+  }
+})
+
+test('whitespace CSS does not parse INSIDE the value is refused, not passed to the chat', async () => {
   const h = harness()
-  const chat = await init({ target: h.target, token: makeToken(), accent: ' #6b5bff\n' })
-  assert.equal(accentParam(h), '#6b5bff')
+  const chat = await init({ target: h.target, token: makeToken() })
+  h.ready()
+  const { warnings } = quietly(() => chat.setStyle({ accent: 'rgb(107\u00a091\u00a0255)' }))
+  assert.equal(h.styles().length, 0)
+  assert.equal(warnings.length, 1)
   chat.destroy()
 })
 
