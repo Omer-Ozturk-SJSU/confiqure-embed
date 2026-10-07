@@ -71,6 +71,7 @@ const chat = await confiqure.open({
   intent: 'The user clicked "Send to restocker" on the discovery panel.',
   referentKeys: ['d20d07d7af15'],           // optional — each opens that record
   toolClass: 'ListingsTool',                // optional (0.3.0) — opens the chat with this tool class loaded
+  pageSummary: { page: 'discovery', asOf: new Date().toISOString(), data: { shown: 25 } }, // optional (0.3.3)
   data: { restockList: [/* …the real DTO shape, real field names… */] }
 })
 
@@ -96,7 +97,12 @@ Rules of the road:
   chat, and is marked host-authored to the model.
 - `toolClass` (0.3.0, annotation 3.0) names one of your `@Confiqure.Tool` classes —
   the chat opens with it already loaded. An unknown name is ignored, never an error.
-- `open()` without `intent`/`referentKeys`/`toolClass`/`data` behaves exactly like
+- `toolClasses` (0.3.3) — up to 5 tool-class names, all loaded; the **first** is the current
+  one. `toolClass` still works as a list of one; when both are given the list wins.
+- `pageSummary` (0.3.3) — `{ page, asOf, data }`: the page's state, which the chat reads on every
+  turn. Never saved, never a transfer, never merged into `data`; a reopen with a newer one
+  replaces the older. Max 16,384 characters serialized.
+- `open()` without `intent`/`referentKeys`/`toolClass`/`toolClasses`/`pageSummary`/`data` behaves exactly like
   `init()`; `chat.submission` is `null` then.
 - `open()` supersedes the mint-time `openingContext` (still accepted for
   back-compat, scheduled for retirement).

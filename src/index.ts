@@ -1,4 +1,4 @@
-import type { ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, ConfiqureStyle, ConfiqureMessage, SubmitResult } from './types.js'
+import type { ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, ConfiqureStyle, ConfiqureMessage, SubmitResult, PageSummary } from './types.js'
 import { fetchToken, decodeTokenClaims } from './token.js'
 import { EventBus, FLUSH_CAP_MS } from './events.js'
 import { createIframe, destroyIframe } from './iframe.js'
@@ -66,7 +66,53 @@ interface SubmitHandoff {
   referentKeys?: string[]
   /** Annotation 3.0: the tool class the chat opens with. */
   toolClass?: string
+  /** F46: the tool classes the chat opens with, the first current. */
+  toolClasses?: string[]
+  /** F46: the page's state — never part of `data`, never a transfer. */
+  pageSummary?: PageSummary
   data?: Record<string, unknown>
+}
+
+/** F46 — the most tool classes one open() may load. */
+const MAX_TOOL_CLASSES = 5
+
+/** F46 — the tool-class list: trimmed non-empty strings, at most five; a wrong shape throws in the host's console. */
+function normalizeToolClasses(raw: unknown): string[] | undefined {
+  if (raw === undefined || raw === null) return undefined
+  if (!Array.isArray(raw) || raw.some((c) => typeof c !== 'string')) {
+    throw new Error(`confiqure: open({ toolClasses }) must be an array of tool-class names — got ${describe(raw)}.`)
+  }
+  const names = (raw as string[]).map((c) => c.trim()).filter((c) => c.length > 0)
+  if (names.length > MAX_TOOL_CLASSES) {
+    throw new Error(`confiqure: open({ toolClasses }) takes at most ${MAX_TOOL_CLASSES} names — got ${names.length}.`)
+  }
+  return names.length > 0 ? names : undefined
+}
+
+/**
+ * F46 — the page summary, normalized like `data` (#243: a plain, JSON-serializable copy, un-proxied) and kept apart from
+ * it. `page` and `asOf` are strings; `data` is a plain object. A wrong shape throws in the host's console.
+ */
+function normalizePageSummary(raw: unknown): PageSummary | undefined {
+  if (raw === undefined || raw === null) return undefined
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`confiqure: open({ pageSummary }) must be { page, asOf, data } — got ${describe(raw)}.`)
+  }
+  const r = raw as { page?: unknown; asOf?: unknown; data?: unknown }
+  if (typeof r.page !== 'string' || typeof r.asOf !== 'string') {
+    throw new Error(`confiqure: open({ pageSummary }) needs page and asOf as strings — got page ${describe(r.page)}, asOf ${describe(r.asOf)}.`)
+  }
+  let data: unknown
+  try {
+    data = r.data === undefined ? {} : JSON.parse(JSON.stringify(r.data))
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e)
+    throw new Error(`confiqure: open({ pageSummary.data }) is not JSON-serializable (${reason}).`)
+  }
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(`confiqure: open({ pageSummary.data }) must be a plain object — got ${describe(data)}.`)
+  }
+  return { page: r.page, asOf: r.asOf, data: data as Record<string, unknown> }
 }
 
 /**
@@ -165,11 +211,16 @@ function extractHandoff(options: ConfiqureOpenOptions): SubmitHandoff | null {
   // hanging delivery later. An absent/empty data payload is not an error — it's simply no data.
   const data = options.data != null ? normalizeHandoffData(options.data) : undefined
   const hasData = data != null && Object.keys(data).length > 0
-  if (!hasIntent && !hasRefs && !toolClass && !hasData) return null
+  // F46: the page summary and the tool-class list count as context; neither is ever merged into data
+  const toolClasses = normalizeToolClasses(options.toolClasses)
+  const pageSummary = normalizePageSummary(options.pageSummary)
+  if (!hasIntent && !hasRefs && !toolClass && !toolClasses && !pageSummary && !hasData) return null
   return {
     intent: hasIntent ? options.intent : undefined,
     referentKeys: hasRefs ? options.referentKeys : undefined,
     toolClass: toolClass || undefined,
+    toolClasses,
+    pageSummary,
     data: hasData ? data : undefined
   }
 }
@@ -600,6 +651,6 @@ async function validateToolHandlers(
 
 export { init, open }
 export type {
-  ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, ConfiqureStyle, ConfiqureLook, SubmitResult,
+  ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, ConfiqureStyle, ConfiqureLook, SubmitResult, PageSummary,
   ToolHandler, ToolContext
 } from './types.js'

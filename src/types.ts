@@ -73,7 +73,7 @@ export interface ConfiqureInitOptions {
 
 /**
  * #238 — `confiqure.open()` options: everything `init` takes, plus the opening context. The
- * session opens token-only and instantly; `intent`/`referentKeys`/`toolClass`/`data` are handed to the chat AFTER open through the
+ * session opens token-only and instantly; `intent`/`referentKeys`/`toolClass(es)`/`pageSummary`/`data` are handed to the chat AFTER open through the
  * submit channel — `data` moves as one visible transfer (live progress block in the chat),
  * is validated by the endpoint's save gates, and lands in the configuration draft. The model
  * only ever sees a count-reference, never the payload.
@@ -93,11 +93,32 @@ export interface ConfiqureOpenOptions extends ConfiqureInitOptions {
    */
   toolClass?: string
   /**
+   * F46: up to 5 tool-class names the chat opens with; the FIRST is the current one (your page's primary tool first).
+   * `toolClass` still works, as a list of one; when both are given, this list wins. Unknown names are ignored.
+   */
+  toolClasses?: string[]
+  /**
+   * F46: the page's state, for the chat to read on every turn — which page, as of when, and the page's own JSON.
+   * Never saved, never a submission, never shown to the user as data; a reopen with a newer summary replaces the older.
+   * Max 16,384 characters serialized (a larger one is refused). Never merged into `data`.
+   */
+  pageSummary?: PageSummary
+  /**
    * The data hand-off: the REAL DTO shape keyed by your endpoint's real field names
    * (e.g. `{ restockList: [...] }`). Max 10 MB serialized — larger belongs in the
    * attachment/document pipeline. A wrong shape rejects through {@link ConfiqureChat.submission}.
    */
   data?: Record<string, unknown>
+}
+
+/** F46 — the page summary `confiqure.open({ pageSummary })` hands to the chat. */
+export interface PageSummary {
+  /** The page's name as your app calls it (≤ 128 chars). */
+  page: string
+  /** When the page's state was read — your own timestamp text (≤ 64 chars). */
+  asOf: string
+  /** The page's own JSON, as the chat should read it. */
+  data: Record<string, unknown>
 }
 
 /** #238 — the submit channel's result, surfaced on {@link ConfiqureChat.submission}. */
