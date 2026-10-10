@@ -1,9 +1,10 @@
-import type { ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, ConfiqureStyle, ConfiqureMessage, SubmitResult } from './types.js'
+import type { ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, ConfiqureStyle, ConfiqureMessage, ConfiqureProgress, SubmitResult } from './types.js'
 import { fetchToken, decodeTokenClaims } from './token.js'
 import { EventBus, FLUSH_CAP_MS } from './events.js'
 import { createIframe, destroyIframe } from './iframe.js'
 import { isCssColor } from './color.js'
 import { isLook, LOOKS, type ConfiqureLook } from './look.js'
+import { readProgress, sameProgress } from './progress.js'
 
 const DEFAULT_BASE_URL = 'https://confiqure.ai'
 const DEFAULT_API_BASE_URL = 'https://api.confiqure.ai'
@@ -259,6 +260,7 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
   // misconfigured (wrong origin or blocked framing). Surface it instead of failing silently.
   let readyTimer: ReturnType<typeof setTimeout> | undefined
   let readyFired = false
+  let readyTimedOut = false
   bus.on('ready', () => {
     readyFired = true
     clearTimeout(readyTimer)
@@ -287,6 +289,8 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
       'Note: an intentionally offscreen or loading="lazy" iframe that has not scrolled into view can also trip this.'
     )
     bus.emitError('EMBED_NOT_READY', 'chat iframe did not become ready within 8s')
+    readyTimedOut = true
+    failAnnounces('the chat did not become ready')
   }, 8000)
 
   if (autoResize) {
@@ -458,6 +462,8 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
   }
 
   bus.on('ready', () => {
+    // setProgress(): a value posted before the widget listened is lost, and a reload drops the strip.
+    if (currentProgress) postToIframe({ type: 'confiqure:progress', progress: currentProgress })
     if (currentTheme !== theme) postToIframe({ type: 'confiqure:theme', theme: currentTheme })
     const changed: ConfiqureMessage = { type: 'confiqure:style' }
     if (currentLook !== look) changed.look = currentLook
@@ -466,6 +472,60 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
   })
 
   let teardownStarted = false
+
+  // setProgress() (embed 0.4.0): the last progress the host set, re-sent at `ready`. Null = none.
+  let currentProgress: ConfiqureProgress | null = null
+
+  // announce() (embed 0.4.0): one host line into the OPEN chat over the hand-off road (`confiqure:submit`
+  // with an intent only). The result message carries no key, so announces go ONE AT A TIME — the next is
+  // posted only after the previous result — and only after open()'s own hand-off settled, so neither
+  // result can be taken for the other.
+  type PendingAnnounce = { text: string; resolve: (r: SubmitResult) => void; reject: (e: Error) => void }
+  const announces: PendingAnnounce[] = []
+  let announcing: PendingAnnounce | null = null
+  let handoffSettled = submission == null
+  let chatClosed = false
+  function failAnnounces(why: string): void {
+    const all = announcing ? [announcing, ...announces] : [...announces]
+    announcing = null
+    announces.length = 0
+    for (const a of all) a.reject(new Error(`confiqure: announce() failed — ${why}`))
+  }
+  function pumpAnnounces(): void {
+    if (announcing || !readyFired || !handoffSettled || teardownStarted || announces.length === 0) return
+    const a = announces.shift()!
+    announcing = a
+    let delivered = false
+    try {
+      delivered = postToIframe({ type: 'confiqure:submit', intent: a.text })
+    } catch {
+      delivered = false
+    }
+    if (!delivered) {
+      announcing = null
+      a.reject(new Error('confiqure: announce() failed — the chat iframe did not accept the message (see the preceding console error)'))
+      pumpAnnounces()
+    }
+  }
+  if (submission) {
+    const settled = () => { handoffSettled = true; pumpAnnounces() }
+    submission.then(settled, settled)
+  }
+  bus.on('ready', () => pumpAnnounces())
+  bus.on('closed', () => { chatClosed = true; failAnnounces('the chat was closed') })
+  bus.on('submit_result', (data) => {
+    const a = announcing
+    if (!a) return   // open()'s own hand-off (announces wait for it to settle)
+    announcing = null
+    const r = data as SubmitResult
+    if (r.ok) a.resolve(r)
+    else {
+      const err = new Error('confiqure: announce() rejected — ' + (r.error ?? 'unknown')) as Error & { result?: SubmitResult }
+      err.result = r
+      a.reject(err)
+    }
+    pumpAnnounces()
+  })
 
   /**
    * setTheme() and setStyle() share this: validate each part (look, mode, accent), remember it for
@@ -520,6 +580,25 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
       }
       applyStyle(next, 'confiqure:style', 'setStyle() expects theme', 'setStyle()')
     },
+    setProgress(next) {
+      const progress = readProgress(next)
+      if (progress === undefined || sameProgress(progress, currentProgress)) return
+      currentProgress = progress
+      if (!teardownStarted) postToIframe({ type: 'confiqure:progress', progress })
+    },
+    announce(text) {
+      if (typeof text !== 'string' || !text.trim() || text.length > 500) {
+        console.warn(`confiqure: announce() expects a non-blank string of at most 500 characters — got ${JSON.stringify(text)}; not sent.`)
+        return Promise.reject(new Error('confiqure: announce() expects a non-blank string of at most 500 characters'))
+      }
+      if (teardownStarted) return Promise.reject(new Error('confiqure: announce() failed — the chat was destroyed'))
+      if (chatClosed) return Promise.reject(new Error('confiqure: announce() failed — the chat was closed'))
+      if (readyTimedOut && !readyFired) return Promise.reject(new Error('confiqure: announce() failed — the chat did not become ready'))
+      return new Promise<SubmitResult>((resolve, reject) => {
+        announces.push({ text, resolve, reject })
+        pumpAnnounces()
+      })
+    },
     /**
      * #321 — teardown flushes in-flight tool replies first.
      *
@@ -536,6 +615,7 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
     destroy() {
       if (teardownStarted) return
       teardownStarted = true
+      failAnnounces('the chat was destroyed')
       clearTimeout(readyTimer)
       clearTimeout(refreshTimer)   // #322: a torn-down widget must not keep re-minting
       if (!bus.hasPendingToolWork()) {
@@ -601,5 +681,6 @@ async function validateToolHandlers(
 export { init, open }
 export type {
   ConfiqureInitOptions, ConfiqureOpenOptions, ConfiqureChat, ConfiqureStyle, ConfiqureLook, SubmitResult,
+  ConfiqureProgress, ProgressVariant, ProgressState,
   ToolHandler, ToolContext
 } from './types.js'

@@ -207,6 +207,53 @@ wins over it, for that page only — highest first: a live `setStyle()`/`setThem
 dashboard mode of light or dark applies when your page passes no `theme` or `'auto'`. An unknown
 `look` name is ignored with a console warning.
 
+## Progress and stage lines from your page (0.4.0)
+
+### A progress strip — `chat.setProgress()`
+
+When your page runs something long (an import, a sync), show its progress in the chat: a strip
+pinned above the chat's answer area that stays in view while the conversation scrolls. It is not
+a message. Call it whenever your own progress changes; the chat paints at most once per frame and
+ignores a repeat, so a call per tick is fine. Each call is the whole progress, nothing is merged:
+
+```js
+chat.setProgress({
+  variant: 'simpleProgressBar',   // or 'bulkyProgressBar' (a card with a large count); the default is simple
+  title: 'Importing listings',    // the strip's heading
+  stage: 'Reading',               // the short stage word your page shows
+  done: 40, total: 160,           // whole numbers; without total the strip shows the track only
+  state: 'running',               // 'running' (default) | 'done' | 'failed'
+  since: Date.now()               // the bulky card shows "since …"
+})
+chat.setProgress({ title: 'Importing listings', done: 160, total: 160, state: 'done' })   // settles, then hides
+chat.setProgress({ title: 'Importing listings', done: 97, total: 160, state: 'failed', reason: 'The file ended early' })
+chat.setProgress(null)   // hide it now
+```
+
+The state is said in words in the strip ("Stopped at 97 of 160: The file ended early"); the bar
+keeps one ink. A done strip hides itself after a moment unless you send again; a failed one stays
+until you send `null` or a new run. Texts are shown as given (at most 120 characters each), never as
+HTML. An invalid field is ignored with a console warning; the rest applies. A call made before the
+chat is ready is shown as soon as it is, and again after a reload. It never makes the chat speak.
+
+### A stage line the chat answers — `chat.announce()`
+
+`announce(text)` posts ONE line from your page into the OPEN chat, so the chat speaks without the
+user typing — use it when a stage changes (the count is known, the import finished), never per
+count tick:
+
+```js
+await chat.announce('The import finished: 160 items are ready.')
+```
+
+Every announce is a chat turn (one model call). Announces go one at a time, in the order made, after
+the chat is ready and after `open()`'s own hand-off has settled; each resolves with the chat's result
+(it also fires `submit_result`). It rejects when the text is blank or longer than 500 characters,
+when the conversation is no longer open (after it closed or outside its return window — re-open with
+`confiqure.open({ intent })` instead), or when the chat never became ready, closed or was destroyed.
+An announce that lands while the chat waits for the user's answer makes the chat ask that question
+again after it.
+
 ## Cleanup
 
 ```js

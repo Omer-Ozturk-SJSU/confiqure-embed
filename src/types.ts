@@ -152,6 +152,54 @@ export interface ConfiqureChat {
    * `destroy()` it does nothing.
    */
   setStyle(style: ConfiqureStyle): void
+  /**
+   * Show the host's progress in the chat's progress strip, pinned above the chat's answer area, or
+   * clear it with `null` — e.g. `chat.setProgress({ title: 'Importing listings', stage: 'Reading',
+   * done: 40, total: 160 })`. Each call is the whole progress (nothing is merged with the last one).
+   * Call it as often as your own progress changes; the chat paints at most once per frame and
+   * ignores a repeat. An invalid half is warned about and ignored (the rest applies). A call made
+   * before the chat is ready is shown as soon as it is (and again after a reload); after
+   * `destroy()` it does nothing. It never makes the chat speak — use {@link ConfiqureChat.announce}
+   * for that.
+   */
+  setProgress(progress: ConfiqureProgress | null): void
+  /**
+   * Post ONE line from your page into the OPEN chat, so the chat speaks without the user typing —
+   * e.g. `chat.announce('The import finished: 160 items are ready.')`. Every announce is a turn of
+   * the chat (one model call), so announce a stage change, never every count tick (the ticks go
+   * through {@link ConfiqureChat.setProgress}). The text is a non-blank string of at most 500
+   * characters. Announces go one at a time, in the order made, after the chat is ready and after
+   * open()'s own hand-off has settled. Resolves with the chat's result; rejects when the text is
+   * invalid, the chat refused it (the conversation is closed or past its return window — re-open
+   * with `open({ intent })` instead), or the chat never became ready, closed, or was destroyed.
+   * An announce that lands while the chat waits for the user's answer makes the chat re-ask that
+   * question after it. Its result also fires the `submit_result` event.
+   */
+  announce(text: string): Promise<SubmitResult>
+}
+
+/** The strip's two variants (embed 0.4.0): the host chooses; simpleProgressBar is the default. */
+export type ProgressVariant = 'simpleProgressBar' | 'bulkyProgressBar'
+export type ProgressState = 'running' | 'done' | 'failed'
+
+/** The host's progress for {@link ConfiqureChat.setProgress} (embed 0.4.0). */
+export interface ConfiqureProgress {
+  /** 'simpleProgressBar' (default): the thin bar the agent mark rides; 'bulkyProgressBar': the card. */
+  variant?: ProgressVariant
+  /** The strip's heading, e.g. 'Importing listings' (at most 120 characters, shown as text). */
+  title?: string
+  /** The short stage word your page shows, e.g. 'Reading' (at most 120 characters). */
+  stage?: string
+  /** Items done: a whole number of 0 or more. */
+  done?: number
+  /** Items in all: a whole number of 0 or more; without it the strip shows the track with no fill. */
+  total?: number
+  /** 'running' (default), 'done' or 'failed'. The state is said in words; the bar keeps one ink. */
+  state?: ProgressState
+  /** Why a run stopped — with state 'failed' only (at most 120 characters). */
+  reason?: string
+  /** When the run started, in epoch milliseconds; the bulky variant shows it as its since-line. */
+  since?: number
 }
 
 /** The live style a host can hand the chat through {@link ConfiqureChat.setStyle}. */
@@ -190,6 +238,10 @@ export interface ConfiqureMessage {
   // confiqure:style (host -> iframe) — chat.setStyle(): the look, the mode and/or the accent hue to show now.
   accent?: string
   look?: ConfiqureLook
+  // confiqure:progress (host -> iframe) — chat.setProgress(): the strip's progress, or null to clear it.
+  progress?: ConfiqureProgress | null
+  // confiqure:submit (host -> iframe) — open()'s hand-off, or chat.announce()'s intent-only line.
+  intent?: string
   submissionId?: number | null
   confiqureKey?: string
   itemCount?: number | null
