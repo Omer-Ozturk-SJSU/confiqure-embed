@@ -173,7 +173,8 @@ export interface ConfiqureChat {
    * invalid, the chat refused it (the conversation is closed or past its return window — re-open
    * with `open({ intent })` instead), or the chat never became ready, closed, or was destroyed.
    * An announce that lands while the chat waits for the user's answer makes the chat re-ask that
-   * question after it. Its result also fires the `submit_result` event.
+   * question after it. Its result also fires the `submit_result` event. An announce whose result never
+   * arrives holds the ones after it until the chat closes, is destroyed, or the page reloads.
    */
   announce(text: string): Promise<SubmitResult>
 }

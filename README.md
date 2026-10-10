@@ -231,8 +231,10 @@ chat.setProgress(null)   // hide it now
 ```
 
 The state is said in words in the strip ("Stopped at 97 of 160: The file ended early"); the bar
-keeps one ink. A done strip hides itself after a moment unless you send again; a failed one stays
-until you send `null` or a new run. Texts are shown as given (at most 120 characters each), never as
+keeps one ink. Done becomes a small notice that stays until the user's next message: a run that
+finishes in view settles, then shrinks to one line ("Done · Importing listings · 160 / 160"); a done
+value sent when nothing was showing (the user came back to a finished job) is that notice at once. A
+failed strip stays until you send `null` or a new run. Texts are shown as given (at most 120 characters each), never as
 HTML. An invalid field is ignored with a console warning; the rest applies. A call made before the
 chat is ready is shown as soon as it is, and again after a reload. It never makes the chat speak.
 
@@ -248,7 +250,8 @@ await chat.announce('The import finished: 160 items are ready.')
 
 Every announce is a chat turn (one model call). Announces go one at a time, in the order made, after
 the chat is ready and after `open()`'s own hand-off has settled; each resolves with the chat's result
-(it also fires `submit_result`). It rejects when the text is blank or longer than 500 characters,
+(it also fires `submit_result`). An announce whose result never arrives holds the ones after it until
+the chat closes, is destroyed, or the page reloads. It rejects when the text is blank or longer than 500 characters,
 when the conversation is no longer open (after it closed or outside its return window — re-open with
 `confiqure.open({ intent })` instead), or when the chat never became ready, closed or was destroyed.
 An announce that lands while the chat waits for the user's answer makes the chat ask that question
