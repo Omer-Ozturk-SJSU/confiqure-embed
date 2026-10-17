@@ -201,6 +201,24 @@ test('announce: a closed chat rejects the waiting and the later announces', asyn
   chat.destroy()
 })
 
+test('announce: a user close (the phone hide) is not an ending — the queue keeps going', async () => {
+  const h = harness(); const chat = await mount(h); h.ready()
+  const a = chat.announce('Stage one is done.')
+  h.fire({ type: 'confiqure:closed', reason: 'user' })
+  h.result({ ok: true, submissionId: null })
+  assert.equal((await a).ok, true)
+  const b = chat.announce('Stage two is done.')
+  assert.equal(h.posted.filter(m => m.type === 'confiqure:submit').at(-1).intent, 'Stage two is done.')
+  h.result({ ok: true, submissionId: null })
+  assert.equal((await b).ok, true)
+  // a terminal reason after it still latches
+  const c = chat.announce('Stage three is done.')
+  h.fire({ type: 'confiqure:closed', reason: 'complete' })
+  await assert.rejects(c, /the chat was closed/)
+  await assert.rejects(chat.announce('Stage four is done.'), /the chat was closed/)
+  chat.destroy()
+})
+
 test('announce: destroy() rejects what is queued, and later calls reject', async () => {
   const h = harness(); const chat = await mount(h)
   const a = chat.announce('Stage one is done.')

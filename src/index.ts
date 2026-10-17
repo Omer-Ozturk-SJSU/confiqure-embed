@@ -512,7 +512,13 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
     submission.then(settled, settled)
   }
   bus.on('ready', () => pumpAnnounces())
-  bus.on('closed', () => { chatClosed = true; failAnnounces('the chat was closed') })
+  // reason 'user' is the phone close button (widget row 13301): the host hides the frame and shows it again,
+  // so the chat is still open and the queue keeps going. Every other reason keeps the terminal latch.
+  bus.on('closed', (data) => {
+    if ((data as { reason?: unknown } | undefined)?.reason === 'user') return
+    chatClosed = true
+    failAnnounces('the chat was closed')
+  })
   bus.on('submit_result', (data) => {
     const a = announcing
     if (!a) return   // open()'s own hand-off (announces wait for it to settle)

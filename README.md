@@ -137,7 +137,7 @@ Since 0.3.0 (annotation 3.0) the SDK forwards only `endUserHandle` — the token
 chat.on('ready', () => { })
 chat.on('complete', (data) => { /* data.values */ })
 chat.on('error', (err) => { /* err.code, err.message */ })
-chat.on('closed', (data) => { /* data.reason */ })
+chat.on('closed', (data) => { /* data.reason: 'complete' | 'error' end the chat; 'user' = the phone close button, hide and keep the frame */ })
 ```
 
 ## Options
