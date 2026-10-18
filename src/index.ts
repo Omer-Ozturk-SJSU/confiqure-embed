@@ -279,6 +279,7 @@ async function mount(options: ConfiqureInitOptions, handoff: SubmitHandoff | nul
     // postMessage after the widget signals `submit-ready` (nothing contextual in URLs).
     pendingSubmit: handoff != null
   })
+  bus.setOwnFrame(() => iframe.contentWindow)
 
   readyTimer = setTimeout(() => {
     if (readyFired) return

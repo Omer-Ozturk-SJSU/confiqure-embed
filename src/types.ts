@@ -117,6 +117,12 @@ export interface ConfiqureChat {
   on(event: 'complete', handler: (data: { confiqureKeys: string[] }) => void): ConfiqureChat
   on(event: 'error', handler: (err: { code: string; message: string }) => void): ConfiqureChat
   on(event: 'closed', handler: (data: { reason: string }) => void): ConfiqureChat
+  /**
+   * Row 13529: this iframe's own phone close button is drawn and usable (framed `client: MOBILE` chats
+   * only), so drop your fallback close. No payload. Not a readiness signal: it can come before, after or
+   * without `ready`. Register right after `open()`; keep the flag across a hide/reopen of the same iframe.
+   */
+  on(event: 'close-drawn', handler: () => void): ConfiqureChat
   /** #238: fires when an open() hand-off settles — same payload the `submission` promise carries. */
   on(event: 'submit_result', handler: (data: SubmitResult) => void): ConfiqureChat
   /**

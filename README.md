@@ -138,6 +138,7 @@ chat.on('ready', () => { })
 chat.on('complete', (data) => { /* data.values */ })
 chat.on('error', (err) => { /* err.code, err.message */ })
 chat.on('closed', (data) => { /* data.reason: 'complete' | 'error' end the chat; 'user' = the phone close button, hide and keep the frame */ })
+chat.on('close-drawn', () => { /* the phone widget's own close is drawn: drop your fallback close (not a readiness signal) */ })
 ```
 
 ## Options

@@ -61,7 +61,15 @@ export class EventBus {
   /** #321 — a tracked reply expired on the grace timer instead of being acked (during a drain). */
   private sawUnackedDrop = false
 
+  /** Row 13529: this instance's iframe window, for signals that must come from our own frame only. */
+  private ownFrame: () => unknown = () => null
+
   constructor(private allowedOrigin: string) {}
+
+  /** Row 13529: name this instance's iframe so `close-drawn` from another frame on the same origin is ignored. */
+  setOwnFrame(getWindow: () => unknown): void {
+    this.ownFrame = getWindow
+  }
 
   /** Wire frontend-tool handling: the map of handlers and how to reply to the iframe. */
   configureTools(tools: Record<string, ToolHandler>, postToIframe: (msg: object) => boolean | void, timeoutMs?: number): void {
@@ -113,6 +121,15 @@ export class EventBus {
         case 'closed':
           this.emit('closed', { reason: msg.reason ?? 'unknown' })
           break
+        // Row 13529: the phone widget's own close button is drawn and usable, so the host can drop its
+        // fallback close. No payload. Says nothing about readiness. Only from the configured origin
+        // (checked above) AND this instance's own iframe; a duplicate just fires again.
+        case 'close-drawn': {
+          const own = this.ownFrame()
+          if (own == null || e.source !== own) break
+          this.emit('close-drawn')
+          break
+        }
         case 'resize':
           this.emit('resize', { height: msg.height ?? 0 })
           break
